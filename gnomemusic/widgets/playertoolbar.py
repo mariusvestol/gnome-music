@@ -56,6 +56,7 @@ class PlayerToolbar(Gtk.ActionBar):
     _repeat_image = Gtk.Template.Child()
     _song_info_box = Gtk.Template.Child()
     _title_label = Gtk.Template.Child()
+    _queue_button = Gtk.Template.Child()
 
     def __init__(self):
         super().__init__()
@@ -114,6 +115,8 @@ class PlayerToolbar(Gtk.ActionBar):
         self._player.connect(
             'notify::repeat-mode', self._on_repeat_mode_changed)
         self._player.connect('notify::state', self._sync_playing)
+        self._player.connect(
+            'queue-changed', lambda *args: self._sync_prev_next())
 
         repeat_mode = self._player.props.repeat_mode
         self._repeat_action.set_state(

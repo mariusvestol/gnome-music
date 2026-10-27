@@ -28,6 +28,14 @@
   <menu id="_primary_menu">
     <section>
       <item>
+        <attribute name="label" translatable="true">Up Next</attribute>
+        <attribute name="action">app.queue</attribute>
+      </item>
+      <item>
+        <attribute name="label" translatable="true">Sound</attribute>
+        <attribute name="action">app.sound</attribute>
+      </item>
+      <item>
         <attribute name="label" translatable="true">Preferences</attribute>
         <attribute name="action">app.preferences</attribute>
       </item>

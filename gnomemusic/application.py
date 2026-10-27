@@ -160,6 +160,8 @@ class Application(Adw.Application):
     def _set_actions(self):
         action_entries = [
             ("about", self._about, None),
+            ("queue", self._toggle_queue, ("app.queue", ["<Ctrl>j"])),
+            ("sound", self._sound_dialog, None),
             ("preferences", self._preferences_dialog,
                 ("app.preferences", ["<Ctrl>comma"])),
             ("help", self._help, ("app.help", ["F1"])),
@@ -172,6 +174,13 @@ class Application(Adw.Application):
             self.add_action(simple_action)
             if accel is not None:
                 self.set_accels_for_action(*accel)
+
+    def _toggle_queue(self, action, param):
+        self._window.toggle_queue()
+
+    def _sound_dialog(self, action, param):
+        from gnomemusic.widgets.sounddialog import SoundDialog
+        SoundDialog(self).present(self._window)
 
     def _help(self, action: Gio.Action, param: Optional[GLib.Variant]) -> None:
 
@@ -201,13 +210,17 @@ class Application(Adw.Application):
         self._set_actions()
 
     def _quit(self, action=None, param=None):
+        self._player.stop()
         self._window.destroy()
 
     def do_activate(self):
         if not self._window:
             self._window = Window(self)
             self.notify("window")
-            self._window.set_default_icon_name(self.props.application_id)
+            icon = self.props.application_id
+            if icon == 'org.gnome.Music.Mod':
+                icon = 'org.gnome.Music'
+            self._window.set_default_icon_name(icon)
             if self.props.application_id == "org.gnome.Music.Devel":
                 self._window.get_style_context().add_class('devel')
             MPRIS(self)

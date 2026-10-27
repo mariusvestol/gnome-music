@@ -17,6 +17,12 @@
         <child>
           <object class="AdwToastOverlay" id="_toast_overlay">
             <child>
+              <object class="AdwOverlaySplitView" id="_queue_split">
+                <property name="sidebar-position">end</property>
+                <property name="show-sidebar">false</property>
+                <property name="min-sidebar-width">300</property>
+                <property name="max-sidebar-width">360</property>
+                <property name="content">
               <object class="AdwNavigationView" id="_navigation_view">
                 <child>
                   <object class="AdwNavigationPage" id="_main_navigation_page">
@@ -50,6 +56,8 @@
                     </property>
                   </object>
                 </child>
+              </object>
+                </property>
               </object>
             </child>
           </object>

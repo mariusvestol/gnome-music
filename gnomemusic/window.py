@@ -56,6 +56,7 @@ class Window(Adw.ApplicationWindow):
     _player_toolbar = Gtk.Template.Child()
     _stack = Gtk.Template.Child()
     _toast_overlay = Gtk.Template.Child()
+    _queue_split = Gtk.Template.Child()
 
     def __init__(self, app):
         """Initialize the main window.
@@ -78,6 +79,45 @@ class Window(Adw.ApplicationWindow):
 
         self._startup_timeout_id = 0
         self._setup_view()
+        from gnomemusic.widgets.queuepanel import QueuePanel
+        self._queue_split.props.sidebar = QueuePanel(app, self)
+        self._queue_split.bind_property(
+            'show-sidebar', self._player_toolbar._queue_button, 'active',
+            GObject.BindingFlags.BIDIRECTIONAL
+            | GObject.BindingFlags.SYNC_CREATE)
+        breakpoint = Adw.Breakpoint.new(
+            Adw.BreakpointCondition.parse('max-width: 850px'))
+        breakpoint.add_setter(self._queue_split, 'collapsed', True)
+        self.add_breakpoint(breakpoint)
+
+    def toggle_queue(self):
+        split = self._queue_split
+        split.props.show_sidebar = not split.props.show_sidebar
+
+    def show_toast(self, title):
+        self._toast_overlay.add_toast(Adw.Toast.new(title))
+
+    def show_album(self, song):
+        from gnomemusic.widgets.albumnavigationpage import AlbumNavigationPage
+        albums = self._app.props.coremodel.props.albums_sort
+        # Prefer MusicBrainz release IDs when present, then title and artist.
+        album_id = song.props.media.get_mb_release_id()
+        matches = [album for album in albums
+                   if album.props.title == song.props.album]
+        album = next((a for a in albums if album_id
+                      and a.props.media.get_mb_release_id() == album_id), None)
+        if album is None:
+            artist = song.props.media.get_album_artist() or song.props.artist
+            album = next((a for a in matches if a.props.artist == artist),
+                         matches[0] if len(matches) == 1 else None)
+        if album is None:
+            self.show_toast(_("Album not found in the library"))
+            return
+        self._search.props.search_mode_active = False
+        if self._queue_split.props.collapsed:
+            self._queue_split.props.show_sidebar = False
+        self._navigation_view.replace_with_tags(['mainview'])
+        self._navigation_view.push(AlbumNavigationPage(self._app, album))
 
     def _setup_view(self):
         self._headerbar.props.stack = self._stack

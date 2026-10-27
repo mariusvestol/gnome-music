@@ -221,6 +221,14 @@ class CoreModel(GObject.GObject):
         else:
             return Gtk.Ordering.EQUAL
 
+    def detach_playback_queue(self):
+        """Keep queue edits independent of the source album or playlist."""
+        if self._player_signal_id:
+            self._current_playlist_model.disconnect(self._player_signal_id)
+            self._player_signal_id = 0
+        self._current_playlist_model = None
+        self._previous_playlist_model = None
+
     def _set_player_model(self, playlist_type, model):
         """Set the model for PlayerPlaylist to use
 

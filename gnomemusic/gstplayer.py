@@ -31,7 +31,7 @@ from gettext import gettext as _, ngettext
 import gi
 gi.require_version('Gst', '1.0')
 gi.require_version('GstPbutils', '1.0')
-from gi.repository import Gtk, Gio, GObject, Gst, GstPbutils
+from gi.repository import Gtk, Gio, GLib, GObject, Gst, GstPbutils
 
 if typing.TYPE_CHECKING:
     from gnomemusic.application import Application
@@ -88,7 +88,7 @@ class GstPlayer(GObject.GObject):
 
         self._settings.connect(
             "changed::replaygain", self._on_replaygain_setting_changed)
-        self._settings.emit("changed", "replaygain")
+        self._on_replaygain_setting_changed(self._settings, 'replaygain')
 
         self._bus.connect('message::async-done', self._on_async_done)
         self._bus.connect(
@@ -105,39 +105,77 @@ class GstPlayer(GObject.GObject):
         self._state = Playback.STOPPED
 
     def _setup_replaygain(self):
-        """Set up replaygain"""
-        self._rg_volume = Gst.ElementFactory.make("rgvolume", "rg volume")
-        self._rg_limiter = Gst.ElementFactory.make("rglimiter", "rg limiter")
+        self._equalizer = None
+        self._preamp = None
+        for key in ('equalizer-enabled', 'equalizer-bands',
+                    'equalizer-preamp'):
+            self._settings.connect('changed::' + key, self._update_equalizer)
 
-        self._filter_bin = Gst.ElementFactory.make("bin", "filter bin")
-        self._filter_bin.add(self._rg_volume)
-        self._filter_bin.add(self._rg_limiter)
-        self._rg_volume.link(self._rg_limiter)
-
-        pad_src = self._rg_limiter.get_static_pad('src')
-        ghost_src = Gst.GhostPad.new('src', pad_src)
-        self._filter_bin.add_pad(ghost_src)
-
-        pad_sink = self._rg_volume.get_static_pad('sink')
-        ghost_sink = Gst.GhostPad.new('sink', pad_sink)
-        self._filter_bin.add_pad(ghost_sink)
-
-        if (not self._filter_bin
-                or not self._rg_volume
-                or not self._rg_limiter):
-            self._log.message("Replay Gain is not available")
+        # Keep a stable filter graph: playbin cannot replace an audio-filter
+        # reliably while playing. The limiter stays after the EQ.
+        names = ['audioconvert', 'rgvolume', 'volume', 'equalizer-10bands',
+                 'rglimiter', 'audioconvert']
+        elements = [Gst.ElementFactory.make(name) for name in names]
+        if any(element is None for element in elements):
+            self._log.warning('Audio effects are unavailable')
             return
+        audio_filter = Gst.Bin.new(None)
+        for element in elements:
+            audio_filter.add(element)
+        for left, right in zip(elements, elements[1:]):
+            if not left.link(right):
+                self._log.warning('Could not link the audio effects')
+                return
+        audio_filter.add_pad(Gst.GhostPad.new(
+            'sink', elements[0].get_static_pad('sink')))
+        audio_filter.add_pad(Gst.GhostPad.new(
+            'src', elements[-1].get_static_pad('src')))
+        self._rg_volume = elements[names.index('rgvolume')]
+        # rgvolume exposes its volume element through GstChildProxy. Enforce
+        # unity gain while bypassed, including when new track tags arrive.
+        self._rg_child = Gst.ChildProxy.get_child_by_index(self._rg_volume, 0)
+        self._replaygain_enabled = self._settings.get_boolean('replaygain')
+        self._rg_child.connect(
+            'notify::volume', self._enforce_replaygain_bypass)
+        self._preamp = elements[names.index('volume')]
+        self._equalizer = elements[names.index('equalizer-10bands')]
+        self._limiter = elements[names.index('rglimiter')]
+        self._filter_bin = audio_filter
+        self._update_equalizer()
+        self._player.set_property('audio-filter', audio_filter)
 
-    def _on_replaygain_setting_changed(
-            self, settings: Gio.Settings, key: str) -> None:
-        value = settings.get_value(key)
-        if value:
-            self._player.set_property("audio-filter", self._filter_bin)
-        else:
-            self._player.set_property("audio-filter", None)
+    def _on_replaygain_setting_changed(self, settings, key):
+        self._replaygain_enabled = settings.get_boolean('replaygain')
+        if getattr(self, '_rg_child', None) is not None:
+            gain = self._rg_volume.get_property('result-gain')
+            self._rg_child.props.volume = (
+                min(10.0, 10 ** (gain / 20))
+                if self._replaygain_enabled else 1.0)
+            self._update_equalizer()
+
+    def _enforce_replaygain_bypass(self, child, pspec):
+        if not self._replaygain_enabled and child.props.volume != 1.0:
+            child.props.volume = 1.0
+
+    def _update_equalizer(self, *args):
+        if self._equalizer is None:
+            return
+        enabled = self._settings.get_boolean('equalizer-enabled')
+        self._limiter.props.enabled = enabled or self._replaygain_enabled
+        bands = self._settings.get_value('equalizer-bands').unpack()
+        for index in range(10):
+            gain = bands[index] if enabled and index < len(bands) else 0.0
+            self._equalizer.set_property('band' + str(index),
+                                         max(-24.0, min(12.0, gain)))
+        preamp = (
+            self._settings.get_double('equalizer-preamp') if enabled else 0)
+        self._preamp.props.volume = 10 ** (preamp / 20)
+
+    def set_volume(self, volume):
+        self._player.props.volume = volume
 
     def _on_about_to_finish(self, klass):
-        self.emit("about-to-finish")
+        GLib.idle_add(self.emit, "about-to-finish")
 
     def _on_async_done(self, bus, message):
         if self._seek:
@@ -180,7 +218,7 @@ class GstPlayer(GObject.GObject):
         self._create_clock_tick()
 
     def _on_clock_tick(self, clock, time, id, data):
-        self.emit("clock-tick", self._tick)
+        GLib.idle_add(self.emit, "clock-tick", self._tick)
         self._tick += 1
 
     def _on_bus_element(self, bus, message):
@@ -329,7 +367,7 @@ class GstPlayer(GObject.GObject):
         """
         self._seek = self._player.seek_simple(
             Gst.Format.TIME, Gst.SeekFlags.FLUSH | Gst.SeekFlags.KEY_UNIT,
-            seconds * Gst.SECOND)
+            int(seconds * Gst.SECOND))
 
     def _start_plugin_installation(
             self, missing_plugin_messages, confirm_search):

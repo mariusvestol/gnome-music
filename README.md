@@ -1,5 +1,39 @@
 Music is the GNOME music playing application.
 
+## Local queue and audio variant
+
+This local variant is based on GNOME Music 46.0 for Ubuntu 24.04. It keeps
+the existing GTK/libadwaita interface and adds:
+
+- **Up Next**: show the queue with the list button or Ctrl+J; drag upcoming
+  songs to reorder them, use the row menu to move/remove them, or clear
+  upcoming songs. Double-click a queued song to play it. Queue edits do not
+  modify saved playlists. Manually ordering a shuffled queue keeps the
+  displayed order and switches shuffle off.
+- **Song menus**: right-click a song for Play Next, Add to Queue, Go to Album,
+  or Add to Playlist. The existing three-dot button opens the same menu.
+- **Sound**: a ten-band equalizer with presets, automatic headroom and a
+  limiter, plus optional crossfade from 1–12 seconds. Zero disables overlap.
+  Short songs use at most half their duration for the transition. Pause
+  controls both tracks; seeking or skipping ends the active transition.
+
+Run `./run-local` with the Ubuntu GNOME Music runtime installed. The launcher
+compiles resources and settings locally; it does not require Meson or root.
+Run `./run-local --install` to add **Music Mod** to the application menu.
+The application uses its own ID and settings path, `/org/gnome/Music/Mod/`.
+It shares the music library and saved playlists with GNOME Music. The queue
+is temporary and lasts for the current app session; sound settings persist.
+
+Verification (uses synthesized WAV files and silent GStreamer sinks):
+
+```sh
+./run-local --build-only
+/usr/bin/python3 -m unittest discover -s tests -v
+```
+
+The GTK tests need a display; an Xvfb display can be used in headless setups.
+No music files or saved playlists are changed by the tests.
+
 # Where can I find more?
 
 Music has a wiki page at https://wiki.gnome.org/Apps/Music.

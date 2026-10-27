@@ -73,6 +73,9 @@ class SongWidgetMenu(Gtk.PopoverMenu):
         action_group = Gio.SimpleActionGroup()
         action_entries = [
             ("play", self._play_song),
+            ("play_next", self._play_next),
+            ("enqueue", self._enqueue),
+            ("go_album", self._go_album),
             ("add_playlist", self._add_to_playlist),
             ("open_location", self._open_location)
         ]
@@ -80,8 +83,6 @@ class SongWidgetMenu(Gtk.PopoverMenu):
                 and not self._coreobject.props.is_smart):
             action_entries.append(
                 ("remove_playlist", self._remove_from_playlist))
-        elif not isinstance(self._coreobject, Playlist):
-            self.props.menu_model.remove(2)
 
         for name, callback in action_entries:
             action = Gio.SimpleAction.new(name, None)
@@ -90,8 +91,37 @@ class SongWidgetMenu(Gtk.PopoverMenu):
 
         self.insert_action_group("songwidget", action_group)
 
-        open_menu_item = Gio.MenuItem.new(  # noqa: F841
-            _("_Open Location"), "songwidget.open_location")
+        menu = Gio.Menu()
+        playback = Gio.Menu()
+        playback.append(_("Play"), 'songwidget.play')
+        playback.append(_("Play Next"), 'songwidget.play_next')
+        playback.append(_("Add to Queue"), 'songwidget.enqueue')
+        menu.append_section(None, playback)
+        library = Gio.Menu()
+        library.append(_("Go to Album"), 'songwidget.go_album')
+        library.append(_("Add to Playlist…"), 'songwidget.add_playlist')
+        if (isinstance(self._coreobject, Playlist)
+                and not self._coreobject.props.is_smart):
+            library.append(
+                _("Remove from Playlist"), 'songwidget.remove_playlist')
+        menu.append_section(None, library)
+        self.props.menu_model = menu
+
+    def _play_next(self, action, param):
+        self.popdown()
+        self._player.enqueue(self._coresong, play_next=True)
+        self._window.show_toast(
+            _("Playing next: %s") % self._coresong.props.title)
+
+    def _enqueue(self, action, param):
+        self.popdown()
+        self._player.enqueue(self._coresong)
+        self._window.show_toast(
+            _("Added to queue: %s") % self._coresong.props.title)
+
+    def _go_album(self, action, param):
+        self.popdown()
+        self._window.show_album(self._coresong)
 
     def _open_location(self, action: Gio.SimpleAction, param: Any) -> None:
         pass

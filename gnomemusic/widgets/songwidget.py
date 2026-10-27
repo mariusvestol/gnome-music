@@ -88,6 +88,10 @@ class SongWidget(Gtk.ListBoxRow):
 
         self.props.coresong = coresong
         self._state = SongWidget.State.UNPLAYED
+        context_click = Gtk.GestureClick(button=3)
+        context_click.set_propagation_phase(Gtk.PropagationPhase.CAPTURE)
+        context_click.connect('pressed', self._show_context_menu)
+        self.add_controller(context_click)
 
         self.props.coresong.bind_property(
             "track-number", self, "song-number",
@@ -181,6 +185,11 @@ class SongWidget(Gtk.ListBoxRow):
 
         self.emit("widget-moved", source_position)
         return True
+
+    def _show_context_menu(self, gesture, presses, x, y):
+        if self.props.menu is not None:
+            self._menu_button.popup()
+            gesture.set_state(Gtk.EventSequenceState.CLAIMED)
 
     @GObject.Property
     def state(self):

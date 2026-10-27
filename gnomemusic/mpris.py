@@ -289,6 +289,7 @@ class MPRIS(DBusInterface):
         self._player.connect(
             'notify::repeat-mode', self._on_repeat_mode_changed)
         self._player.connect('seek-finished', self._on_seek_finished)
+        self._player.connect('queue-changed', self._on_queue_changed)
 
         self._coremodel = app.props.coremodel
         self._player_model = self._coremodel.props.playlist_sort
@@ -461,6 +462,10 @@ class MPRIS(DBusInterface):
         mpris_playlist = self._get_mpris_playlist_from_playlist(
             current_core_object)
         return (True, mpris_playlist)
+
+    def _on_queue_changed(self, player):
+        if self._player.props.current_song is not None:
+            self._on_player_model_changed(self._player_model, 0, 0, 0)
 
     def _on_current_song_changed(self, player):
         # In repeat song mode, no metadata has changed if the

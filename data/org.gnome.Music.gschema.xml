@@ -7,6 +7,24 @@
         <value nick="shuffle" value="3"/>
     </enum>
     <schema path="/org/gnome/Music/" id="org.gnome.Music" gettext-domain="org.gnome.Music">
+        <key type="b" name="equalizer-enabled">
+            <default>false</default>
+            <summary>Enable the equalizer</summary>
+        </key>
+        <key type="ad" name="equalizer-bands">
+            <default>[0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]</default>
+            <summary>Equalizer gain for each of the ten bands, in dB</summary>
+        </key>
+        <key type="d" name="equalizer-preamp">
+            <range min="-24" max="0"/>
+            <default>0.0</default>
+            <summary>Equalizer preamplification in dB</summary>
+        </key>
+        <key type="d" name="crossfade-seconds">
+            <range min="0" max="12"/>
+            <default>0.0</default>
+            <summary>Crossfade duration in seconds; zero disables overlap</summary>
+        </key>
         <key type="ai" name="window-size">
             <default>[768, 600]</default>
             <summary>Window size</summary>

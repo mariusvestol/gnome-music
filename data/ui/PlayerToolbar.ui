@@ -172,6 +172,21 @@
         <property name="margin-start">6</property>
         <property name="margin-top">6</property>
         <child>
+          <object class="GtkButton">
+            <property name="icon-name">emblem-system-symbolic</property>
+            <property name="tooltip-text" translatable="yes">Sound</property>
+            <property name="action-name">app.sound</property>
+            <style><class name="flat"/></style>
+          </object>
+        </child>
+        <child>
+          <object class="GtkToggleButton" id="_queue_button">
+            <property name="icon-name">view-list-symbolic</property>
+            <property name="tooltip-text" translatable="yes">Up Next</property>
+            <style><class name="flat"/></style>
+          </object>
+        </child>
+        <child>
           <object class="GtkMenuButton" id="_repeat_menu_button">
             <property name="focusable">True</property>
             <property name="receives_default">True</property>

@@ -34,7 +34,8 @@ gi.require_version('GstPbutils', '1.0')
 from gi.repository import GLib, GObject, GstPbutils, Gtk
 
 from gnomemusic.coresong import CoreSong
-from gnomemusic.gstplayer import GstPlayer, Playback
+from gnomemusic.gstplayer import Playback
+from gnomemusic.crossfadeplayer import CrossfadePlayer
 from gnomemusic.widgets.songwidget import SongWidget
 
 if typing.TYPE_CHECKING:
@@ -108,6 +109,8 @@ class PlayerPlaylist(GObject.GObject):
         :return: True if there is a song. False otherwise.
         :rtype: bool
         """
+        if self._model.get_n_items() == 0:
+            return False
         if (self.props.repeat_mode == RepeatMode.SONG
                 or self.props.repeat_mode == RepeatMode.ALL
                 or self.props.position < self._model.get_n_items() - 1):
@@ -121,6 +124,8 @@ class PlayerPlaylist(GObject.GObject):
         :return: True if there is a song. False otherwise.
         :rtype: bool
         """
+        if self._model.get_n_items() == 0:
+            return False
         if (self.props.repeat_mode == RepeatMode.SONG
                 or self.props.repeat_mode == RepeatMode.ALL
                 or (self.props.position <= self._model.get_n_items() - 1
@@ -356,7 +361,8 @@ class Player(GObject.GObject):
 
     __gsignals__ = {
         'seek-finished': (GObject.SignalFlags.RUN_FIRST, None, ()),
-        'song-changed': (GObject.SignalFlags.RUN_FIRST, None, ())
+        'song-changed': (GObject.SignalFlags.RUN_FIRST, None, ()),
+        'queue-changed': (GObject.SignalFlags.RUN_FIRST, None, ())
     }
 
     state = GObject.Property(type=int, default=Playback.STOPPED)
@@ -377,6 +383,8 @@ class Player(GObject.GObject):
         # TODO: Improve playlist handling so this hack is no longer
         # needed.
         self._gapless_set = False
+        self._pending_song = None
+        self._editing_queue = False
         self._log = application.props.log
         self._playlist = PlayerPlaylist(self._app)
 
@@ -394,7 +402,9 @@ class Player(GObject.GObject):
 
         self._new_clock = True
 
-        self._gst_player = GstPlayer(application)
+        self._gst_player = CrossfadePlayer(application)
+        self._gst_player.connect(
+            'transition-cancelled', self._on_transition_cancelled)
         self._gst_player.connect("about-to-finish", self._on_about_to_finish)
         self._gst_player.connect('clock-tick', self._on_clock_tick)
         self._gst_player.connect('eos', self._on_eos)
@@ -437,9 +447,93 @@ class Player(GObject.GObject):
         return self.props.state == Playback.PLAYING
 
     def _on_playlist_model_items_changed(self, model, pos, removed, added):
+        if self._editing_queue:
+            return
         if (removed > 0
                 and model.get_n_items() == 0):
             self.stop()
+        self._queue_changed()
+
+    def _queue_changed(self):
+        self.notify('has-next')
+        self.notify('has-previous')
+        self.emit('queue-changed')
+
+    def queue_songs(self):
+        return list(self._playlist_model)
+
+    def _replace_queue(self, songs):
+        """Commit the visible order without modifying the library source."""
+        current = self.props.current_song
+        self._app.props.coremodel.detach_playback_queue()
+        self._editing_queue = True
+        try:
+            self._playlist_model.set_sorter(None)
+            queue = self._app.props.coremodel.props.playlist
+            queue.splice(0, queue.get_n_items(), songs)
+            # Manual ordering fixes the current shuffled order in place.
+            if self.props.repeat_mode == RepeatMode.SHUFFLE:
+                self.props.repeat_mode = RepeatMode.NONE
+            if current is not None:
+                self._playlist._position = next(
+                    (i for i, song in enumerate(songs) if song is current), 0)
+                self._playlist._update_model_recent()
+        finally:
+            self._editing_queue = False
+        if self._gapless_set:
+            # A preloaded song must follow edits made at the end of a track.
+            self._gst_player.cancel_transition()
+            self._on_transition_cancelled(self._gst_player)
+        self._queue_changed()
+
+    def enqueue(self, song, play_next=False):
+        songs = self.queue_songs()
+        queued = CoreSong(self._app, song.props.media)
+        queued.props.state = SongWidget.State.UNPLAYED
+        position = (self.props.position + 1
+                    if play_next and self.props.current_song is not None
+                    else 0 if play_next else len(songs))
+        songs.insert(position, queued)
+        self._replace_queue(songs)
+        return queued
+
+    def move_queue_song(self, source, target):
+        songs = self.queue_songs()
+        first = self.props.position + 1 if self.props.current_song else 0
+        if not (first <= source < len(songs) and first <= target < len(songs)):
+            return
+        songs.insert(target, songs.pop(source))
+        self._replace_queue(songs)
+
+    def remove_queue_song(self, position):
+        songs = self.queue_songs()
+        first = self.props.position + 1 if self.props.current_song else 0
+        if first <= position < len(songs):
+            songs.pop(position)
+            self._replace_queue(songs)
+
+    def clear_queue(self):
+        first = self.props.position + 1 if self.props.current_song else 0
+        self._replace_queue(self.queue_songs()[:first])
+
+    def play_queue_position(self, position):
+        songs = self.queue_songs()
+        if not 0 <= position < len(songs):
+            return
+        self.stop()
+        for song in songs:
+            if song.props.state == SongWidget.State.PLAYING:
+                song.props.state = SongWidget.State.PLAYED
+        song = songs[position]
+        self._playlist._position = position
+        song.props.state = SongWidget.State.PLAYING
+        self._playlist._update_model_recent()
+        self.play(song)
+        self._queue_changed()
+
+    def _on_transition_cancelled(self, player):
+        self._gapless_set = False
+        self._pending_song = None
 
     def _on_repeat_mode_changed(
             self, settings: Gio.Settings, key: str) -> None:
@@ -447,46 +541,49 @@ class Player(GObject.GObject):
         self.props.repeat_mode = RepeatMode(repeat_mode)
 
     def _on_about_to_finish(self, klass):
-        if self.props.has_next:
+        if self.props.has_next and not self._gapless_set:
             self._log.debug("Song is about to finish, loading the next one.")
             next_coresong = self._playlist.get_next()
+            self._pending_song = next_coresong
             new_url = next_coresong.props.url
-            self._gst_player.props.url = new_url
             self._gapless_set = True
+            self._gst_player.props.url = new_url
 
     def _on_eos(self, klass):
-        self._playlist.next()
-
-        if self._gapless_set:
-            # After 'eos' in the gapless case, the pipeline needs to be
-            # hard reset.
-            self._log.debug("Song finished, loading the next one.")
-            self.stop()
+        self.stop()
+        if self._playlist.next():
             self.play(self.props.current_song)
-        else:
-            self._log.debug("End of the playlist, stopping the player.")
-            self.stop()
-
-        self._gapless_set = False
 
     def _on_error(self, klass=None):
         self.stop()
         self._gapless_set = False
 
         current_song = self.props.current_song
+        if current_song is None:
+            return
         current_song.props.validation = CoreSong.Validation.FAILED
         if (self.has_next
                 and self.props.repeat_mode != RepeatMode.SONG):
             self.next()
 
     def _on_stream_start(self, klass):
-        if self._gapless_set:
-            self._playlist.next()
+        if self._gapless_set and self._pending_song is not None:
+            for index, song in enumerate(self._playlist_model):
+                if song is self._pending_song:
+                    current = self.props.current_song
+                    if current is not None:
+                        current.props.state = SongWidget.State.PLAYED
+                    self._playlist._position = index
+                    song.props.state = SongWidget.State.PLAYING
+                    self._playlist._update_model_recent()
+                    break
 
         self._gapless_set = False
+        self._pending_song = None
         self._time_stamp = int(time.time())
 
         self.emit("song-changed")
+        self._queue_changed()
 
     def _load(self, coresong):
         self._log.debug("Loading song {}".format(coresong.props.title))
@@ -527,15 +624,17 @@ class Player(GObject.GObject):
     def stop(self):
         """Stop"""
         self._gst_player.props.state = Playback.STOPPED
+        self._gapless_set = False
+        self._pending_song = None
 
     def next(self):
         """"Play next song
 
         Play the next song of the playlist, if any.
         """
-        if self._gapless_set:
-            self.set_position(0.0)
-        elif self._playlist.next():
+        self._gst_player.cancel_transition()
+        self._on_transition_cancelled(self._gst_player)
+        if self._playlist.next():
             self.play(self._playlist.props.current_song)
 
     def previous(self):
@@ -544,20 +643,12 @@ class Player(GObject.GObject):
         Play the previous song of the playlist, if any.
         """
         position = self._gst_player.props.position
-        if self._gapless_set:
-            self.stop()
+        self._gst_player.cancel_transition()
+        self._on_transition_cancelled(self._gst_player)
 
         if (position < 5
                 and self._playlist.has_previous()):
             self._playlist.previous()
-            self._gapless_set = False
-            self.play(self._playlist.props.current_song)
-        # This is a special case for a song that is very short and the
-        # first song in the playlist. It can trigger gapless, but
-        # has_previous will return False.
-        elif (position < 5
-                and self._playlist.props.position == 0):
-            self.set_position(0.0)
             self._gapless_set = False
             self.play(self._playlist.props.current_song)
         else:
@@ -575,6 +666,8 @@ class Player(GObject.GObject):
             tick, self._gst_player.props.position))
 
         current_song = self._playlist.props.current_song
+        if current_song is None:
+            return
 
         if tick == 0:
             self._new_clock = True
