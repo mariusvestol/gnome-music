@@ -19,7 +19,11 @@ the existing GTK/libadwaita interface and adds:
 
 Run `./run-local` with the Ubuntu GNOME Music runtime installed. The launcher
 compiles resources and settings locally; it does not require Meson or root.
-Run `./run-local --install` to add **Music Mod** to the application menu.
+Run `./run-local --install` to add **Music** to the application menu.
+The installer also installs the app icons and retains available translations
+and help, so the Ubuntu GNOME Music package can be removed afterwards.
+Keep its runtime dependencies installed; the local app still uses GTK,
+libadwaita, Grilo, Tracker, GStreamer and the Python bindings.
 The application uses its own ID and settings path, `/org/gnome/Music/Mod/`.
 It shares the music library and saved playlists with GNOME Music. The queue
 is temporary and lasts for the current app session; sound settings persist.

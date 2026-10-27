@@ -2,6 +2,7 @@
 """Run the local Music variant using Ubuntu's installed runtime libraries."""
 import os
 from pathlib import Path
+import shutil
 import subprocess
 import sys
 
@@ -20,23 +21,47 @@ subprocess.run([
 if '--build-only' in sys.argv:
     sys.exit(0)
 if '--install' in sys.argv:
-    applications = Path(os.environ.get('XDG_DATA_HOME', Path.home() / '.local/share')) / 'applications'
+    data_home = Path(os.environ.get('XDG_DATA_HOME', Path.home() / '.local/share'))
+    applications = data_home / 'applications'
     applications.mkdir(parents=True, exist_ok=True)
+    # Keep the launcher and icon usable after removing Ubuntu's Music package.
+    for style, icon in (
+            ('scalable', 'org.gnome.Music.svg'),
+            ('symbolic', 'org.gnome.Music-symbolic.svg')):
+        source = ROOT / 'data/icons/hicolor' / style / 'apps' / icon
+        target = data_home / 'icons/hicolor' / style / 'apps' / icon
+        target.parent.mkdir(parents=True, exist_ok=True)
+        if not target.exists():
+            shutil.copy2(source, target)
+    # Retain existing translations and help before the distro package goes.
+    for source in Path('/usr/share/locale').glob('*/LC_MESSAGES/org.gnome.Music.mo'):
+        target = BUILD / 'locale' / source.relative_to('/usr/share/locale')
+        target.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(source, target)
+    for source in Path('/usr/share/help').glob('*/gnome-music'):
+        target = data_home / 'help' / source.relative_to('/usr/share/help')
+        if not target.exists():
+            shutil.copytree(source, target)
     executable = str(ROOT / 'run-local').replace('\\', '\\\\').replace('"', '\\"').replace('%', '%%')
     desktop = '\n'.join([
-        '[Desktop Entry]', 'Type=Application', 'Name=Music Mod',
+        '[Desktop Entry]', 'Type=Application', 'Name=Music',
         'Comment=Music with an editable queue, equalizer and crossfade',
         f'Exec="{executable}"', 'Icon=org.gnome.Music', 'Terminal=false',
         'Categories=GNOME;GTK;AudioVideo;Audio;Player;',
         'StartupNotify=true', 'StartupWMClass=org.gnome.Music.Mod', ''])
     (applications / 'org.gnome.Music.Mod.desktop').write_text(desktop)
-    print('Installed Music Mod in the application menu.')
+    subprocess.run(['gtk-update-icon-cache', '--force', '--ignore-theme-index',
+                    str(data_home / 'icons/hicolor')], check=False)
+    subprocess.run(['update-desktop-database', str(applications)], check=False)
+    print('Installed Music in the application menu.')
     sys.exit(0)
 
 os.environ['GSETTINGS_SCHEMA_DIR'] = str(BUILD)
 sys.path.insert(0, str(ROOT))
 import gettext
-gettext.bindtextdomain('org.gnome.Music', '/usr/share/locale')
+locale_dir = BUILD / 'locale'
+gettext.bindtextdomain('org.gnome.Music',
+                       str(locale_dir) if locale_dir.exists() else '/usr/share/locale')
 gettext.textdomain('org.gnome.Music')
 import gi
 gi.require_versions({'Adw': '1', 'Gtk': '4.0', 'Gst': '1.0',

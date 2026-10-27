@@ -136,7 +136,8 @@ def show_about(app_id, version, parent):
 
     about = Adw.AboutDialog(
         application_name=_("Music"),
-        application_icon=app_id,
+        application_icon=(
+            'org.gnome.Music' if app_id == 'org.gnome.Music.Mod' else app_id),
         developer_name=_("The GNOME Project"),
         developers=developers,
         designers=designers,
