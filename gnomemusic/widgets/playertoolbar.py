@@ -29,6 +29,7 @@ from gnomemusic.coverpaintable import CoverPaintable
 from gnomemusic.gstplayer import Playback
 from gnomemusic.utils import ArtSize, DefaultIconType
 from gnomemusic.player import Player, RepeatMode
+from gnomemusic.widgets.currentsongcontrols import CurrentSongControls
 from gnomemusic.widgets.smoothscale import SmoothScale  # noqa: F401
 from gnomemusic.widgets.twolinetip import TwoLineTip
 import gnomemusic.utils as utils
@@ -85,6 +86,12 @@ class PlayerToolbar(Gtk.ActionBar):
         action_group = Gio.SimpleActionGroup()
         action_group.add_action(self._repeat_action)
         self.insert_action_group("playertoolbar", action_group)
+
+    def setup_song_controls(self, application):
+        self._song_controls = CurrentSongControls(
+            application, Gtk.PositionType.TOP)
+        self._song_info_box.append(self._song_controls)
+        self._song_controls.add_context_menu(self._song_info_box)
 
     # FIXME: This is a workaround for not being able to pass the player
     # object via init when using Gtk.Builder.

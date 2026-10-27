@@ -5,6 +5,7 @@ from gi.repository import Adw, Gdk, Gio, GObject, Gtk, Pango
 
 from gnomemusic.coverpaintable import CoverPaintable
 from gnomemusic.utils import ArtSize, DefaultIconType
+from gnomemusic.widgets.currentsongcontrols import CurrentSongControls
 from gnomemusic.widgets.playlistdialog import PlaylistDialog
 
 
@@ -42,6 +43,11 @@ class QueuePanel(Gtk.Box):
         self._now_label.add_css_class('heading')
         self._current_box.append(self._now_label)
         self._current = Gtk.Box(spacing=12)
+        self._current_contents = Gtk.Box(hexpand=True)
+        self._current_controls = CurrentSongControls(application)
+        self._current.append(self._current_contents)
+        self._current.append(self._current_controls)
+        self._current_controls.add_context_menu(self._current)
         self._current_box.append(self._current)
         self.append(self._current_box)
 
@@ -190,11 +196,12 @@ class QueuePanel(Gtk.Box):
 
     def _refresh(self, *args):
         current = self._player.props.current_song
-        while self._current.get_first_child() is not None:
-            self._current.remove(self._current.get_first_child())
+        while self._current_contents.get_first_child() is not None:
+            self._current_contents.remove(
+                self._current_contents.get_first_child())
         self._current_box.props.visible = current is not None
         if current is not None:
-            self._current.append(self._song_contents(current))
+            self._current_contents.append(self._song_contents(current))
         first = self._player.props.position + 1 if current else 0
         upcoming = self._player.queue_songs()[first:]
         self._entries.splice(0, self._entries.get_n_items(),

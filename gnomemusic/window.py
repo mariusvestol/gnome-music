@@ -132,6 +132,7 @@ class Window(Adw.ApplicationWindow):
             "notify::search-mode-active", self._on_search_mode_changed)
 
         self._player_toolbar.props.player = self._player
+        self._player_toolbar.setup_song_controls(self._app)
 
         self.views = [None] * len(View)
 

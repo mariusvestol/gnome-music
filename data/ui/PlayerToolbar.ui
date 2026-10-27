@@ -33,6 +33,7 @@
                 <property name="focusable">False</property>
                 <property name="halign">start</property>
                 <property name="ellipsize">middle</property>
+                <property name="width_chars">10</property>
                 <property name="max_width_chars">28</property>
                 <attributes>
                   <attribute name="weight" value="bold" />

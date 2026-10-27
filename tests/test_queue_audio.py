@@ -15,6 +15,7 @@ import tempfile
 import time
 from types import SimpleNamespace
 import unittest
+from unittest.mock import Mock, patch
 import wave
 
 os.environ['GSETTINGS_BACKEND'] = 'memory'
@@ -34,6 +35,7 @@ from gnomemusic.search import Search
 from gnomemusic.gstplayer import Playback
 from gnomemusic.player import Player, RepeatMode
 from gnomemusic.widgets.songwidget import SongWidget
+from gnomemusic.widgets.currentsongcontrols import CurrentSongControls
 
 
 def spin(seconds=0, until=None):
@@ -110,6 +112,95 @@ class QueueAudioTests(unittest.TestCase):
     def start(self):
         self.player.play_queue_position(0)
         self.assertTrue(spin(2, lambda: self.player.props.state == Playback.PLAYING))
+
+    def _tracked_song(self, index):
+        media = self.songs[index].props.media
+        media.set_source('grl-tracker3-source')
+        song = CoreSong(self.app, media)
+        song.props.validation = CoreSong.Validation.SUCCEEDED
+        song.props.state = SongWidget.State.UNPLAYED
+        return song
+
+    def _current_controls(self):
+        self.app.props.player = self.player
+        self.app.props.window = SimpleNamespace(show_album=Mock(), show_toast=Mock())
+        return (CurrentSongControls(self.app, Gtk.PositionType.TOP),
+                CurrentSongControls(self.app))
+
+    def test_current_song_star_syncs_copies_and_follows_song_changes(self):
+        first, second = self._tracked_song(0), self._tracked_song(1)
+        self.app.props.coremodel.props.playlist.remove_all()
+        queued = self.player.enqueue(first)
+        second_queued = self.player.enqueue(second)
+        toolbar, sidebar = self._current_controls()
+        self.assertFalse(toolbar.props.visible)
+        self.start()
+        self.assertIs(toolbar._song, queued)
+        self.assertTrue(toolbar._star.props.visible)
+        toolbar._star.props.active = True
+        self.assertTrue(first.props.favorite)
+        self.assertTrue(sidebar._star.props.active)
+        first.props.favorite = False
+        self.assertFalse(toolbar._star.props.active)
+        self.assertFalse(sidebar._star.props.active)
+        toolbar._menu.activate_action('songwidget.favorite', None)
+        self.assertTrue(first.props.favorite)
+        self.player.play_queue_position(1)
+        self.assertTrue(spin(2, lambda: self.player.props.state == Playback.PLAYING))
+        self.assertIs(toolbar._song, second_queued)
+        self.assertIs(toolbar._menu._coresong, second_queued)
+        self.assertFalse(toolbar._star.props.active)
+        sidebar._star.props.active = True
+        first.props.favorite = False
+        self.assertTrue(toolbar._star.props.active)
+        self.assertTrue(second.props.favorite)
+        self.assertEqual(self.player.props.position, 1)
+
+    def test_current_song_menu_targets_song_without_replacing_queue(self):
+        toolbar, sidebar = self._current_controls()
+        self.start()
+        original = self.player.props.current_song
+        before = [id(song) for song in self.player.queue_songs()]
+        self.assertTrue(toolbar._menu.activate_action('songwidget.go_album', None))
+        self.app.props.window.show_album.assert_called_once_with(original)
+        with patch('gnomemusic.widgets.songwidgetmenu.PlaylistDialog') as dialog:
+            self.assertTrue(sidebar._menu.activate_action('songwidget.add_playlist', None))
+            self.assertIs(dialog.call_args.args[1][0], original)
+            dialog.return_value.present.assert_called_once_with(self.app.props.window)
+            self.player.play_queue_position(1)
+            self.assertTrue(spin(2, lambda: self.player.props.state == Playback.PLAYING))
+            sidebar._menu.activate_action('songwidget.add_playlist', None)
+            self.assertIs(dialog.call_args.args[1][0], self.player.props.current_song)
+        self.assertEqual([id(song) for song in self.player.queue_songs()], before)
+        self.assertEqual(self.player.props.state, Playback.PLAYING)
+        self.assertEqual(self.player.props.position, 1)
+
+    def test_current_song_hides_star_for_sources_without_favorites(self):
+        toolbar, sidebar = self._current_controls()
+        self.start()
+        self.assertTrue(toolbar.props.visible)
+        self.assertFalse(toolbar._star.props.visible)
+        self.assertFalse(toolbar._menu._favorite_action.get_enabled())
+        self.player.stop()
+        self.app.props.coremodel.props.playlist.remove_all()
+        self.assertFalse(toolbar.props.visible)
+        self.assertIsNone(toolbar._menu)
+        self.assertIsNone(sidebar._star_binding)
+
+    def test_playlist_playback_copy_syncs_favorite_with_library(self):
+        from gnomemusic.player import PlayerPlaylist
+        self.app.props.search = Search()
+        coremodel = CoreModel(self.app)
+        original = self._tracked_song(0)
+        source = Gio.ListStore.new(CoreSong)
+        source.append(original)
+        coremodel._set_player_model(PlayerPlaylist.Type.PLAYLIST, source)
+        copy = coremodel.props.playlist[0]
+        self.assertIsNot(copy, original)
+        copy.props.favorite = True
+        self.assertTrue(original.props.favorite)
+        original.props.favorite = False
+        self.assertFalse(copy.props.favorite)
 
     def test_queue_order_duplicates_and_clear_do_not_interrupt(self):
         self.start()

@@ -489,6 +489,10 @@ class Player(GObject.GObject):
     def enqueue(self, song, play_next=False):
         songs = self.queue_songs()
         queued = CoreSong(self._app, song.props.media)
+        song.bind_property(
+            'favorite', queued, 'favorite',
+            GObject.BindingFlags.BIDIRECTIONAL
+            | GObject.BindingFlags.SYNC_CREATE)
         queued.props.state = SongWidget.State.UNPLAYED
         position = (self.props.position + 1
                     if play_next and self.props.current_song is not None

@@ -11,7 +11,10 @@ the existing GTK/libadwaita interface and adds:
   modify saved playlists. Manually ordering a shuffled queue keeps the
   displayed order and switches shuffle off.
 - **Song menus**: right-click a song for Play Next, Add to Queue, Go to Album,
-  or Add to Playlist. The existing three-dot button opens the same menu.
+  Add to Playlist, or Star. The existing three-dot button opens the same menu.
+  The currently playing song has a star and a three-dot menu in both the
+  player bar and the queue's Now Playing section. You can also right-click
+  its cover/title. Star changes stay in sync with the library.
 - **Sound**: a ten-band equalizer with presets, automatic headroom and a
   limiter, plus optional crossfade from 1–12 seconds. Zero disables overlap.
   Short songs use at most half their duration for the transition. Pause
