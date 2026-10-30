@@ -46,11 +46,14 @@ class AsyncQueue(GObject.GObject):
     may have an arbitrary number of arguments following.
     """
 
-    def __init__(self, queue_name: Optional[str] = None) -> None:
+    def __init__(
+            self, queue_name: Optional[str] = None,
+            max_async: int = 40) -> None:
         """Initialize AsyncQueue
 
         :param str queue_name: The user facing name of this queue or
             None for the generic class identifier
+        :param int max_async: Maximum simultaneous tasks
         """
         super().__init__()
 
@@ -58,7 +61,7 @@ class AsyncQueue(GObject.GObject):
         self._async_active_pool: Dict[int, Tuple] = {}
         self._async_data: Dict[object, Tuple[int, float]] = {}
         self._log = MusicLogger()
-        self._max_async = 40
+        self._max_async = max_async
         self._queue_name = queue_name if queue_name else self
         self._timeout_id = 0
 

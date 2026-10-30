@@ -3,6 +3,7 @@ from gettext import gettext as _
 
 from gi.repository import GObject, Gtk
 
+from gnomemusic.signals import connect_weak
 from gnomemusic.widgets.songwidgetmenu import SongWidgetMenu
 from gnomemusic.widgets.startoggle import StarToggle
 
@@ -54,13 +55,14 @@ class CurrentSongControls(Gtk.Box):
             self._menu = SongWidgetMenu(
                 self._application, None, song, current_song=True)
             self._menu_button.props.popover = self._menu
+            connect_weak(self._menu, 'map', self._position_menu)
             self._position_menu()
         else:
             self._menu.props.coreobject = song
 
     def _position_menu(self, *args):
         # GTK's position notification needs the menu to belong to a window.
-        if self._menu is not None and self.get_root() is not None:
+        if self._menu is not None and self._menu.get_root() is not None:
             self._menu.props.position = self._menu_position
 
     def add_context_menu(self, widget):

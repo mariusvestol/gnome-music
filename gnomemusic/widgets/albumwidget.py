@@ -31,6 +31,7 @@ from gi.repository import Adw, Gio, GLib, GObject, Gtk
 
 from gnomemusic.corealbum import CoreAlbum
 from gnomemusic.coverpaintable import CoverPaintable
+from gnomemusic.signals import connect_weak, weak_callback
 from gnomemusic.utils import ArtSize, DefaultIconType
 from gnomemusic.widgets.discbox import DiscBox
 from gnomemusic.widgets.playlistdialog import PlaylistDialog
@@ -83,9 +84,11 @@ class AlbumWidget(Adw.Bin):
 
         self._cover_image.set_size_request(
             ArtSize.LARGE.width, ArtSize.LARGE.height)
-        self._cover_image.props.paintable = CoverPaintable(
-            self, ArtSize.LARGE, DefaultIconType.ALBUM)
+        CoverPaintable.new_for_image(
+            self._cover_image, ArtSize.LARGE, DefaultIconType.ALBUM)
         self._player = self._application.props.player
+        connect_weak(
+            self._play_button, 'clicked', self._on_play_button_clicked)
 
         self.bind_property(
             "show-artist-label", self._artist_label, "visible",
@@ -99,7 +102,7 @@ class AlbumWidget(Adw.Bin):
         )
         for (name, callback) in actions:
             action = Gio.SimpleAction.new(name, None)
-            action.connect("activate", callback)
+            connect_weak(action, "activate", callback)
             action_group.add_action(action)
 
         self.insert_action_group("album", action_group)
@@ -143,19 +146,21 @@ class AlbumWidget(Adw.Bin):
         self._artist_label.props.label = artist
         self._artist_label.props.tooltip_text = artist
 
-        self._duration_signal_id = self._corealbum.connect(
-            "notify::duration", self._on_release_info_changed)
-        self._year_signal_id = self._corealbum.connect(
-            "notify::year", self._on_release_info_changed)
+        self._duration_signal_id = connect_weak(
+            self._corealbum, "notify::duration", self._on_release_info_changed)
+        self._year_signal_id = connect_weak(
+            self._corealbum, "notify::year", self._on_release_info_changed)
         self._set_composer_label()
         # In case the duration is no longer changing, make sure it is
         # displayed.
         self._corealbum.notify("duration")
 
         self._album_model = self._corealbum.props.model
-        self._model_signal_id = self._album_model.connect_after(
-            "items-changed", self._on_model_items_changed)
-        self._disc_list_box.bind_model(self._album_model, self._create_widget)
+        self._model_signal_id = connect_weak(
+            self._album_model, "items-changed", self._on_model_items_changed,
+            after=True)
+        self._disc_list_box.bind_model(
+            self._album_model, weak_callback(self._create_widget))
 
         self._album_model.items_changed(0, 0, 0)
 
@@ -189,7 +194,7 @@ class AlbumWidget(Adw.Bin):
 
     def _create_widget(self, disc: CoreDisc) -> DiscBox:
         disc_box = DiscBox(self._application, self._corealbum, disc)
-        disc_box.connect('song-activated', self._song_activated)
+        connect_weak(disc_box, 'song-activated', self._song_activated)
 
         return disc_box
 
@@ -282,7 +287,6 @@ class AlbumWidget(Adw.Bin):
             data: Optional[GLib.Variant]) -> None:
         self._play()
 
-    @Gtk.Template.Callback()
     def _on_play_button_clicked(self, button: Gtk.Button) -> None:
         # When the coreobject is an artist, the first song of the album
         # needs to be loaded. Otherwise, the first album of the artist

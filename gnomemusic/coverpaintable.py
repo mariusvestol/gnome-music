@@ -25,12 +25,14 @@
 from __future__ import annotations
 from typing import Optional, Union
 import typing
+import weakref
 
 import gi
 gi.require_versions({"Gdk": "4.0", "Gtk": "4.0", "Gsk": "4.0"})
 from gi.repository import Adw, Gsk, Gtk, GObject, Graphene, Gdk
 
 from gnomemusic.texturecache import TextureCache
+from gnomemusic.signals import connect_weak
 from gnomemusic.utils import ArtSize, DefaultIconType
 if typing.TYPE_CHECKING:
     from gnomemusic.corealbum import CoreAlbum
@@ -50,6 +52,16 @@ class CoverPaintable(GObject.GObject, Gdk.Paintable):
 
     __gtype_name__ = "CoverPaintable"
 
+    @classmethod
+    def new_for_image(
+            cls, image: Gtk.Image, art_size: ArtSize,
+            icon_type: DefaultIconType) -> CoverPaintable:
+        """Keep the Python paintable alive for exactly the image's lifetime."""
+        paintable = cls(image, art_size, icon_type)
+        image._music_cover = paintable
+        image.props.paintable = paintable
+        return paintable
+
     def __init__(
             self, widget: Gtk.Widget, art_size: ArtSize,
             icon_type: DefaultIconType) -> None:
@@ -63,16 +75,20 @@ class CoverPaintable(GObject.GObject, Gdk.Paintable):
 
         self._art_size = art_size
         self._coreobject: Optional[CoreObject] = None
-        self._icon_theme = Gtk.IconTheme.new().get_for_display(
-            widget.get_display())
+        self._icon_theme = Gtk.IconTheme.get_for_display(widget.get_display())
         self._icon_type = icon_type
         self._style_manager = Adw.StyleManager.get_default()
         self._texture = None
         self._texture_cache = TextureCache()
         self._thumbnail_id = 0
-        self._widget = widget
+        self._widget = weakref.ref(widget)
 
-        self._style_manager.connect("notify::dark", self._on_dark_changed)
+        connect_weak(
+            self._style_manager, "notify::dark", self._on_dark_changed)
+        connect_weak(self._texture_cache, "texture", self._on_texture_cache)
+        connect_weak(widget, "notify::scale-factor", self._on_scale_changed)
+        weakref.finalize(
+            self, self._texture_cache.clear_pending_lookup_callback)
 
     def do_snapshot(self, snapshot: Gtk.Snapshot, w: int, h: int) -> None:
         if self._icon_type == DefaultIconType.ARTIST:
@@ -102,9 +118,10 @@ class CoverPaintable(GObject.GObject, Gdk.Paintable):
                 self._texture, Gsk.ScalingFilter.TRILINEAR, rect)
         else:
             i_s = 1 / 3  # Icon scale
+            widget = self._widget()
             icon_pt = self._icon_theme.lookup_icon(
                 self._icon_type.value, None, w * i_s,
-                self._widget.props.scale_factor, 0, 0)
+                widget.props.scale_factor if widget is not None else 1, 0, 0)
 
             bg_color = Gdk.RGBA()
             bg_color.parse("rgba(95%, 95%, 95%, 1)")
@@ -139,7 +156,7 @@ class CoverPaintable(GObject.GObject, Gdk.Paintable):
         return self._coreobject
 
     @coreobject.setter  # type: ignore
-    def coreobject(self, coreobject: CoreObject) -> None:
+    def coreobject(self, coreobject: Optional[CoreObject]) -> None:
         """Update the coreobject used for CoverPaintable
 
         :param Union[CoreAlbum, CoreArtist, CoreSong] coreobject:
@@ -159,8 +176,10 @@ class CoverPaintable(GObject.GObject, Gdk.Paintable):
             self._thumbnail_id = 0
 
         self._coreobject = coreobject
-        self._thumbnail_id = self._coreobject.connect(
-            "notify::thumbnail", self._on_thumbnail_changed)
+        if coreobject is None:
+            return
+        self._thumbnail_id = connect_weak(
+            coreobject, "notify::thumbnail", self._on_thumbnail_changed)
 
         if self._coreobject.props.thumbnail is not None:
             self._on_thumbnail_changed(self._coreobject, None)
@@ -175,8 +194,14 @@ class CoverPaintable(GObject.GObject, Gdk.Paintable):
             self.invalidate_contents()
             return
 
-        self._texture_cache.connect("texture", self._on_texture_cache)
-        self._texture_cache.lookup(thumbnail_uri)
+        widget = self._widget()
+        scale = widget.props.scale_factor if widget is not None else 1
+        size = max(self._art_size.width, self._art_size.height) * scale
+        self._texture_cache.lookup(thumbnail_uri, size)
+
+    def _on_scale_changed(self, widget, pspec):
+        if self._coreobject is not None:
+            self._on_thumbnail_changed(self._coreobject, None)
 
     def _on_texture_cache(
             self, texture_cache: TextureCache, texture: Gdk.Texture) -> None:

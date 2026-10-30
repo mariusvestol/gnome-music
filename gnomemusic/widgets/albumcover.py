@@ -70,8 +70,8 @@ class AlbumCover(Gtk.FlowBoxChild):
 
         self._cover_image.set_size_request(
             ArtSize.MEDIUM.width, ArtSize.MEDIUM.height)
-        self._cover_image.props.paintable = CoverPaintable(
-            self, ArtSize.MEDIUM, DefaultIconType.ALBUM)
+        CoverPaintable.new_for_image(
+            self._cover_image, ArtSize.MEDIUM, DefaultIconType.ALBUM)
 
     def retrieve(self):
         """Start retrieving the actual album cover

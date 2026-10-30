@@ -5,6 +5,7 @@ GSETTINGS_BACKEND=memory GSETTINGS_SCHEMA_DIR=$PWD/.local-build \
   /usr/bin/python3 -m unittest discover -s tests -v
 """
 import logging
+import gc
 from array import array
 import math
 import os
@@ -17,6 +18,7 @@ from types import SimpleNamespace
 import unittest
 from unittest.mock import Mock, patch
 import wave
+import weakref
 
 os.environ['GSETTINGS_BACKEND'] = 'memory'
 os.environ.setdefault('GSETTINGS_SCHEMA_DIR', str(Path(__file__).resolve().parents[1] / '.local-build'))
@@ -201,6 +203,39 @@ class QueueAudioTests(unittest.TestCase):
         self.assertTrue(original.props.favorite)
         original.props.favorite = False
         self.assertFalse(copy.props.favorite)
+
+    def test_removed_song_rows_and_menus_are_released(self):
+        from gnomemusic.widgets.songwidgetmenu import SongWidgetMenu
+        self.app.props.player = self.player
+        self.app.props.window = Mock()
+        host = Gtk.ListBox()
+        references = []
+        for _ in range(100):
+            row = SongWidget(self.songs[0], can_dnd=True)
+            row.props.menu = SongWidgetMenu(self.app, row, self.songs[0])
+            host.append(row)
+            references.append(weakref.ref(row))
+            host.remove(row)
+            del row
+        gc.collect()
+        self.assertEqual(sum(ref() is not None for ref in references), 0)
+
+    def test_album_widgets_are_released_while_library_survives(self):
+        from gnomemusic.corealbum import CoreAlbum
+        from gnomemusic.widgets.albumwidget import AlbumWidget
+        self.app.props.player = self.player
+        album = CoreAlbum(self.app, self.songs[0].props.media)
+        album._thumbnail = 'generic'
+        album._model = Gtk.SortListModel.new(Gio.ListStore(), None)
+        references = []
+        for _ in range(30):
+            widget = AlbumWidget(self.app)
+            widget.props.corealbum = album
+            references.append(weakref.ref(widget))
+            del widget
+        gc.collect()
+        self.assertEqual(sum(ref() is not None for ref in references), 0)
+        album.notify('duration')
 
     def test_queue_order_duplicates_and_clear_do_not_interrupt(self):
         self.start()

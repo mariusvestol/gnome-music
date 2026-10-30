@@ -25,7 +25,7 @@
 from __future__ import annotations
 from typing import Optional
 
-from gi.repository import Gdk, Gio, GLib, GObject
+from gi.repository import Gdk, GdkPixbuf, Gio, GLib, GObject
 
 from gnomemusic.musiclogger import MusicLogger
 
@@ -42,7 +42,8 @@ class MediaArtLoader(GObject.GObject):
         "finished": (GObject.SignalFlags.RUN_FIRST, None, (object, ))
     }
 
-    _chunksize = 32768
+    # Default for callers without a widget size; views request device pixels.
+    _MAX_TEXTURE_SIZE = 512
     _log = MusicLogger()
 
     def __init__(self) -> None:
@@ -50,14 +51,15 @@ class MediaArtLoader(GObject.GObject):
         """
         super().__init__()
 
-        self._bytearray = bytearray()
         self._texture: Optional[Gdk.Texture] = None
 
-    def start(self, uri: str) -> None:
+    def start(self, uri: str, size: int = _MAX_TEXTURE_SIZE) -> None:
         """Start the cache query
 
         :param str uri: The MediaArt uri
+        :param int size: Maximum width and height in device pixels
         """
+        self._size = size
         thumb_file = Gio.File.new_for_uri(uri)
         if thumb_file:
             thumb_file.read_async(
@@ -74,39 +76,21 @@ class MediaArtLoader(GObject.GObject):
                 "Error: {}, {}".format(error.domain, error.message))
             self.emit("finished", self._texture)
         else:
-            stream.read_bytes_async(
-                self._chunksize, GLib.PRIORITY_DEFAULT_IDLE, None,
-                self._read_bytes_async_cb)
+            GdkPixbuf.Pixbuf.new_from_stream_at_scale_async(
+                stream, self._size, self._size,
+                True, None, self._on_pixbuf_loaded, stream)
 
-    def _read_bytes_async_cb(
-            self, stream: Gio.FileInputStream,
-            result: Gio.AsyncResult) -> None:
+    def _on_pixbuf_loaded(
+            self, source: Optional[GObject.Object], result: Gio.AsyncResult,
+            stream: Gio.FileInputStream) -> None:
         try:
-            gbytes = stream.read_bytes_finish(result)
+            pixbuf = GdkPixbuf.Pixbuf.new_from_stream_finish(result)
+            self._texture = Gdk.Texture.new_for_pixbuf(pixbuf)
         except GLib.Error as error:
             self._log.warning(
                 "Error: {}, {}".format(error.domain, error.message))
-            stream.close_async(
-                GLib.PRIORITY_DEFAULT_IDLE, None, self._close_stream)
-            return
-
-        gbytes_size = gbytes.get_size()
-        if gbytes_size > 0:
-            self._bytearray += gbytes.unref_to_data()
-
-            stream.read_bytes_async(
-                self._chunksize, GLib.PRIORITY_DEFAULT_IDLE, None,
-                self._read_bytes_async_cb)
-        else:
-            # FIXME: Use GTask to load textures async.
-            # See pygobject#114 for bytes conversion.
-            self._texture = Gdk.Texture.new_from_bytes(
-                GLib.Bytes(bytes(self._bytearray)))
-
-            self._bytearray = bytearray()
-
-            stream.close_async(
-                GLib.PRIORITY_DEFAULT_IDLE, None, self._close_stream)
+        stream.close_async(
+            GLib.PRIORITY_DEFAULT_IDLE, None, self._close_stream)
 
     def _close_stream(
             self, stream: Gio.InputStream, result: Gio.AsyncResult) -> None:

@@ -99,8 +99,8 @@ class AlbumsView(Adw.Bin):
         cover_image = list_item.props.child.get_first_child()
         cover_image.set_size_request(
             ArtSize.MEDIUM.width, ArtSize.MEDIUM.height)
-        cover_image.props.paintable = CoverPaintable(
-            self, ArtSize.MEDIUM, icon_type=DefaultIconType.ALBUM)
+        CoverPaintable.new_for_image(
+            cover_image, ArtSize.MEDIUM, icon_type=DefaultIconType.ALBUM)
 
     def _bind_list_item(
             self, factory: Gtk.SignalListItemFactory,
@@ -127,3 +127,5 @@ class AlbumsView(Adw.Bin):
             list_item: Gtk.ListItem) -> None:
         bindings = self._list_item_bindings.pop(list_item)
         [binding.unbind() for binding in bindings]
+        cover_image = list_item.props.child.get_first_child()
+        cover_image.props.paintable.props.coreobject = None

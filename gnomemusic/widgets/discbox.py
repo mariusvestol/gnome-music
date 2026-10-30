@@ -30,6 +30,7 @@ from gi.repository import Gdk, Gio, GObject, Gtk
 
 from gnomemusic.widgets.songwidget import SongWidget
 from gnomemusic.widgets.songwidgetmenu import SongWidgetMenu
+from gnomemusic.signals import connect_weak, weak_callback
 if typing.TYPE_CHECKING:
     from gnomemusic.application import Application
     from gnomemusic.corealbum import CoreAlbum
@@ -77,7 +78,9 @@ class DiscBox(Gtk.ListBoxRow):
             'show-disc-label', self._disc_label, 'visible',
             GObject.BindingFlags.SYNC_CREATE)
 
-        self._list_box.bind_model(self._model, self._create_widget)
+        self._list_box.bind_model(
+            self._model, weak_callback(self._create_widget))
+        connect_weak(self._list_box, 'row-activated', self._song_activated)
 
     def _create_widget(self, coresong):
         song_widget = SongWidget(coresong)
@@ -86,7 +89,6 @@ class DiscBox(Gtk.ListBoxRow):
 
         return song_widget
 
-    @Gtk.Template.Callback()
     def _song_activated(
             self, list_box: Gtk.ListBox, song_widget: SongWidget) -> bool:
         self.emit("song-activated", song_widget)

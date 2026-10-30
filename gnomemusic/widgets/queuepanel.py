@@ -23,6 +23,7 @@ class QueuePanel(Gtk.Box):
         self._app = application
         self._window = window
         self._player = application.props.player
+        self._current_song = None
         self._entries = Gio.ListStore.new(QueueEntry)
         self.add_css_class('queue-panel')
 
@@ -90,9 +91,9 @@ class QueuePanel(Gtk.Box):
         box = Gtk.Box(spacing=10, hexpand=True)
         cover = Gtk.Image(pixel_size=40)
         cover.set_size_request(40, 40)
-        paintable = CoverPaintable(self, ArtSize.SMALL, DefaultIconType.ALBUM)
+        paintable = CoverPaintable.new_for_image(
+            cover, ArtSize.SMALL, DefaultIconType.ALBUM)
         paintable.props.coreobject = song
-        cover.props.paintable = paintable
         box.append(cover)
         labels = Gtk.Box(orientation=Gtk.Orientation.VERTICAL,
                          valign=Gtk.Align.CENTER, hexpand=True, spacing=3)
@@ -196,16 +197,30 @@ class QueuePanel(Gtk.Box):
 
     def _refresh(self, *args):
         current = self._player.props.current_song
-        while self._current_contents.get_first_child() is not None:
-            self._current_contents.remove(
-                self._current_contents.get_first_child())
+        if current is not self._current_song:
+            while self._current_contents.get_first_child() is not None:
+                self._current_contents.remove(
+                    self._current_contents.get_first_child())
+            self._current_song = current
+            if current is not None:
+                self._current_contents.append(self._song_contents(current))
         self._current_box.props.visible = current is not None
-        if current is not None:
-            self._current_contents.append(self._song_contents(current))
         first = self._player.props.position + 1 if current else 0
         upcoming = self._player.queue_songs()[first:]
-        self._entries.splice(0, self._entries.get_n_items(),
-                             [QueueEntry(song) for song in upcoming])
+        previous = list(self._entries)
+        start = 0
+        while (start < min(len(previous), len(upcoming))
+                and previous[start].song is upcoming[start]):
+            start += 1
+        end = 0
+        while (end < min(len(previous), len(upcoming)) - start
+                and previous[-1 - end].song is upcoming[-1 - end]):
+            end += 1
+        removed = len(previous) - start - end
+        added = upcoming[start:len(upcoming) - end]
+        if removed or added:
+            self._entries.splice(
+                start, removed, [QueueEntry(song) for song in added])
         self._count.props.label = _('%d songs upcoming') % len(upcoming)
         self._clear.props.sensitive = bool(upcoming)
         self._stack.set_visible_child_name('queue' if upcoming else 'empty')

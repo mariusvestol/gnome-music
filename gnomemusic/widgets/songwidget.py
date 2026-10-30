@@ -31,6 +31,7 @@ from gi.repository import Gdk, GObject, Gtk
 
 from gnomemusic import utils
 from gnomemusic.coresong import CoreSong
+from gnomemusic.signals import connect_weak
 from gnomemusic.utils import SongStateIcon
 from gnomemusic.widgets.startoggle import StarToggle  # noqa: F401
 
@@ -62,6 +63,7 @@ class SongWidget(Gtk.ListBoxRow):
     _artist_label = Gtk.Template.Child()
     _dnd_icon = Gtk.Template.Child()
     _drag_source = Gtk.Template.Child()
+    _drop_target = Gtk.Template.Child()
     _menu_button = Gtk.Template.Child()
     _number_label = Gtk.Template.Child()
     _title_label = Gtk.Template.Child()
@@ -90,8 +92,11 @@ class SongWidget(Gtk.ListBoxRow):
         self._state = SongWidget.State.UNPLAYED
         context_click = Gtk.GestureClick(button=3)
         context_click.set_propagation_phase(Gtk.PropagationPhase.CAPTURE)
-        context_click.connect('pressed', self._show_context_menu)
+        connect_weak(context_click, 'pressed', self._show_context_menu)
         self.add_controller(context_click)
+        connect_weak(self._drag_source, 'prepare', self._on_drag_prepare)
+        connect_weak(self._drag_source, 'drag-begin', self._on_drag_begin)
+        connect_weak(self._drop_target, 'drop', self._on_drop)
 
         self.props.coresong.bind_property(
             "track-number", self, "song-number",
@@ -132,8 +137,9 @@ class SongWidget(Gtk.ListBoxRow):
         self.props.coresong.bind_property(
             "state", self, "state",
             GObject.BindingFlags.SYNC_CREATE)
-        self.props.coresong.connect(
-            "notify::validation", self._on_validation_changed)
+        connect_weak(
+            self.props.coresong, "notify::validation",
+            self._on_validation_changed)
 
         if not self.props.coresong.props.is_tracker:
             self._star_toggle.props.visible = False
@@ -146,7 +152,6 @@ class SongWidget(Gtk.ListBoxRow):
             self._drag_source.props.propagation_phase = capture_phase
             self._dnd_icon.props.visible = True
 
-    @Gtk.Template.Callback()
     def _on_drag_prepare(
         self, drag_source: Gtk.DragSource, x: float,
             y: float) -> Gdk.ContentProvider:
@@ -154,7 +159,6 @@ class SongWidget(Gtk.ListBoxRow):
         self._drag_y = y
         return Gdk.ContentProvider.new_for_value(self)
 
-    @Gtk.Template.Callback()
     def _on_drag_begin(
             self, drag_source: Gtk.DragSource, drag: Gdk.Drag) -> None:
         allocation = self.get_allocation()
@@ -170,7 +174,6 @@ class SongWidget(Gtk.ListBoxRow):
         drag_icon.props.child = self._drag_widget
         drag.set_hotspot(self._drag_x, self._drag_y)
 
-    @Gtk.Template.Callback()
     def _on_drop(
             self, target: Gtk.DropTarget,
             source_widget: SongWidget, x: float, y: float) -> bool:

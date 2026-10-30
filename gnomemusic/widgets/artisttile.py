@@ -54,8 +54,8 @@ class ArtistTile(Gtk.Box):
 
         self._cover_image.set_size_request(
             ArtSize.XSMALL.width, ArtSize.XSMALL.height)
-        self._cover_image.props.paintable = CoverPaintable(
-            self, ArtSize.XSMALL, DefaultIconType.ARTIST)
+        CoverPaintable.new_for_image(
+            self._cover_image, ArtSize.XSMALL, DefaultIconType.ARTIST)
 
         self.bind_property('text', self._label, 'label')
         self.bind_property('text', self._label, 'tooltip-text')

@@ -56,8 +56,8 @@ class ArtistSearchTile(Gtk.FlowBoxChild):
 
         self._cover_image.set_size_request(
             ArtSize.MEDIUM.width, ArtSize.MEDIUM.height)
-        self._cover_image.props.paintable = CoverPaintable(
-            self, ArtSize.MEDIUM, DefaultIconType.ARTIST)
+        CoverPaintable.new_for_image(
+            self._cover_image, ArtSize.MEDIUM, DefaultIconType.ARTIST)
 
         self._cover_image.props.paintable.props.coreobject = coreartist
 

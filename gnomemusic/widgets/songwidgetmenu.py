@@ -23,14 +23,16 @@
 # delete this exception statement from your version.
 
 from __future__ import annotations
-from typing import Any, Optional, Union, cast
+from typing import Any, Callable, Optional, Union, cast
 import typing
+import weakref
 
 from gettext import gettext as _
 from gi.repository import Gio, GLib, GObject, Gtk
 
 from gnomemusic.grilowrappers.grltrackerplaylists import Playlist
 from gnomemusic.songtoast import SongToast
+from gnomemusic.signals import connect_weak
 from gnomemusic.widgets.playlistdialog import PlaylistDialog
 from gnomemusic.widgets.songwidget import SongWidget
 if typing.TYPE_CHECKING:
@@ -67,7 +69,12 @@ class SongWidgetMenu(Gtk.PopoverMenu):
 
         self._coreobject = coreobject
         self._coresong: CoreSong
-        self._song_widget = song_widget
+        self._song_widget_ref: Callable[
+            [], Optional[Union[SongWidget, Gtk.ListItem]]]
+        if song_widget is None:
+            self._song_widget_ref = lambda: None
+        else:
+            self._song_widget_ref = weakref.ref(song_widget)
         self._favorite_handler = 0
 
         self._playlist_dialog: Optional[PlaylistDialog] = None
@@ -75,7 +82,8 @@ class SongWidgetMenu(Gtk.PopoverMenu):
         action_group = Gio.SimpleActionGroup()
         self._favorite_action = Gio.SimpleAction.new_stateful(
             'favorite', None, GLib.Variant('b', False))
-        self._favorite_action.connect('activate', self._toggle_favorite)
+        connect_weak(
+            self._favorite_action, 'activate', self._toggle_favorite)
         action_group.add_action(self._favorite_action)
         action_entries = [
             ("play", self._play_song),
@@ -92,7 +100,7 @@ class SongWidgetMenu(Gtk.PopoverMenu):
 
         for name, callback in action_entries:
             action = Gio.SimpleAction.new(name, None)
-            action.connect("activate", callback)
+            connect_weak(action, "activate", callback)
             action_group.add_action(action)
 
         self.insert_action_group("songwidget", action_group)
@@ -181,10 +189,11 @@ class SongWidgetMenu(Gtk.PopoverMenu):
         self._playlist_dialog.present(self._window)
 
     def _remove_from_playlist(self, action: Gio.Simple, param: Any) -> None:
-        if self._song_widget is None:
+        song_widget = self._song_widget_ref()
+        if song_widget is None:
             return
         self.popdown()
-        position = self._song_widget.get_index()
+        position = song_widget.get_index()
         SongToast(
             self._application, cast(Playlist, self._coreobject), position,
             self._coresong)
@@ -198,8 +207,9 @@ class SongWidgetMenu(Gtk.PopoverMenu):
         self._unwatch_favorite()
         self._coreobject = coreobject
 
-        if isinstance(self._song_widget, SongWidget):
-            self._coresong = self._song_widget.props.coresong
+        song_widget = self._song_widget_ref()
+        if isinstance(song_widget, SongWidget):
+            self._coresong = song_widget.props.coresong
         else:
             self._coresong = coreobject
         self._sync_favorite()

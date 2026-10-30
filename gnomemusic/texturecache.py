@@ -69,13 +69,14 @@ class TextureCache(GObject.GObject):
     # the cache to be useful it needs to be larger than the given
     # numbers combined.
     _MAX_CACHE_SIZE = 800
+    _MAX_CACHE_BYTES = 64 * 1024 * 1024
 
-    _async_queue = AsyncQueue("TextureCache")
+    _async_queue = AsyncQueue("TextureCache", max_async=4)
     _cleanup_id = 0
     _log = MusicLogger()
     _memory_monitor = Gio.MemoryMonitor.dup_default()
     _size = _MAX_CACHE_SIZE
-    _textures: Dict[str, Tuple[
+    _textures: Dict[Tuple[str, int], Tuple[
         TextureCache.LoadingState, float, Optional[Gdk.Texture]]] = {}
 
     def __init__(self) -> None:
@@ -83,7 +84,7 @@ class TextureCache(GObject.GObject):
         """
         super().__init__()
 
-        self._art_loader: MediaArtLoader
+        self._art_loader: Optional[MediaArtLoader] = None
         self._art_loading_id = 0
 
         if TextureCache._cleanup_id == 0:
@@ -95,7 +96,7 @@ class TextureCache(GObject.GObject):
     def clear_pending_lookup_callback(self) -> None:
         """Disconnect ongoing lookup callback
         """
-        if self._art_loading_id != 0:
+        if self._art_loading_id != 0 and self._art_loader is not None:
             # FIXME: It would be better to have AsyncQueue handle
             # this transparently, but this lookup creates a new
             # MediaArtLoader every time even for the same URI.
@@ -104,27 +105,30 @@ class TextureCache(GObject.GObject):
             self._async_queue.queue_remove(self._art_loader)
             self._art_loader.disconnect(self._art_loading_id)
             self._art_loading_id = 0
+            self._art_loader = None
 
-    def lookup(self, uri: str) -> None:
+    def lookup(self, uri: str, size: int = 512) -> None:
         """Look up a texture for the given MediaArt uri
 
         :param str uri: The MediaArt uri
+        :param int size: Requested cover size in device pixels
         """
         self.clear_pending_lookup_callback()
 
-        if uri in TextureCache._textures.keys():
-            state, _, texture = TextureCache._textures[uri]
+        key = (uri, size)
+        if key in TextureCache._textures:
+            state, _, texture = TextureCache._textures[key]
             if state in [
                     TextureCache.LoadingState.AVAILABLE,
                     TextureCache.LoadingState.UNAVAILABLE]:
                 self.emit("texture", texture)
-                TextureCache._textures[uri] = (state, time.time(), texture)
+                TextureCache._textures[key] = (state, time.time(), texture)
                 return
 
         self._art_loader = MediaArtLoader()
         self._art_loading_id = self._art_loader.connect(
-            "finished", self._on_art_loading_finished, uri)
-        self._async_queue.queue(self._art_loader, uri)
+            "finished", self._on_art_loading_finished, key)
+        self._async_queue.queue(self._art_loader, uri, size)
 
     @classmethod
     def _low_memory_warning(
@@ -133,9 +137,9 @@ class TextureCache(GObject.GObject):
         if level < Gio.MemoryMonitorWarningLevel.LOW:
             TextureCache._size = TextureCache._MAX_CACHE_SIZE
         else:
-            # List slicing with 0 gives an empty list in
-            # _cache_cleanup.
+            # Release cached images immediately when memory is scarce.
             TextureCache._size = 1
+        TextureCache._cache_cleanup()
 
     @classmethod
     def _cache_cleanup(cls) -> None:
@@ -143,36 +147,43 @@ class TextureCache(GObject.GObject):
         the oldest items to match the maximum cache size.
         """
         sorted_available = {
-            k: (state, t, texture)
+            k: (t, texture)
             for k, (state, t, texture) in sorted(
                 TextureCache._textures.items(), key=lambda item: item[1][1])
-            if state in [TextureCache.LoadingState.AVAILABLE]}
+            if state == TextureCache.LoadingState.AVAILABLE
+            and texture is not None}
 
         sorted_available_l = len(sorted_available)
-        if sorted_available_l < TextureCache._size:
-            return GLib.SOURCE_CONTINUE
-
-        keys_to_clear = list(sorted_available.keys())[:-TextureCache._size]
-        for key in keys_to_clear:
-            state, t, texture = TextureCache._textures[key]
+        cache_bytes = sum(
+            texture.get_width() * texture.get_height() * 4
+            for _, texture in sorted_available.values())
+        keys_l = 0
+        for key, (t, texture) in sorted_available.items():
+            if (sorted_available_l - keys_l <= TextureCache._size
+                    and cache_bytes <= TextureCache._MAX_CACHE_BYTES):
+                break
+            cache_bytes -= texture.get_width() * texture.get_height() * 4
             TextureCache._textures[key] = (
                 TextureCache.LoadingState.CLEARED, t, None)
+            keys_l += 1
 
-        keys_l = len(keys_to_clear)
-        TextureCache._log.info(
-            f"Cleared {keys_l} items, texture cache contains"
-            f" {sorted_available_l-keys_l} available items.")  # noqa: E226
+        if keys_l:
+            TextureCache._log.info(
+                f"Cleared {keys_l} items, texture cache contains"
+                f" {sorted_available_l-keys_l} available items.")  # noqa: E226
 
         return GLib.SOURCE_CONTINUE
 
     def _on_art_loading_finished(
             self, art_loader: MediaArtLoader, texture: Gdk.Texture,
-            uri: str) -> None:
+            key: Tuple[str, int]) -> None:
+        self.clear_pending_lookup_callback()
         if texture:
             state = TextureCache.LoadingState.AVAILABLE
         else:
             state = TextureCache.LoadingState.UNAVAILABLE
 
-        TextureCache._textures[uri] = (state, time.time(), texture)
+        TextureCache._textures[key] = (state, time.time(), texture)
+        TextureCache._cache_cleanup()
 
         self.emit("texture", texture)

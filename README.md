@@ -41,6 +41,18 @@ Verification (uses synthesized WAV files and silent GStreamer sinks):
 The GTK tests need a display; an Xvfb display can be used in headless setups.
 No music files or saved playlists are changed by the tests.
 
+Artwork is decoded at the size used by the view, including the display's
+HiDPI scale, and the shared texture cache is limited to 64 MiB. At most four
+images decode simultaneously. Removed covers, song rows and album views
+release their subscriptions and image data; queue edits retain unchanged
+rows. These limits apply to artwork, not to the app's total memory usage.
+
+For a memory benchmark with your library, run
+`/usr/bin/python3 tests/profile_memory.py` on an isolated display. It reports
+RSS, live covers and cached texture bytes before and after 80 queue edits,
+then waits for image loading to finish. It uses temporary settings and does
+not play audio or change music files or playlists.
+
 # Where can I find more?
 
 Music has a wiki page at https://wiki.gnome.org/Apps/Music.
