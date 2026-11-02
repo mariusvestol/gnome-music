@@ -121,6 +121,7 @@ class SongWidgetMenu(Gtk.PopoverMenu):
                 _("Remove from Playlist"), 'songwidget.remove_playlist')
         menu.append_section(None, library)
         self._favorite_section = Gio.Menu()
+        self._favorite_label: Optional[str] = None
         menu.append_section(None, self._favorite_section)
         self.props.menu_model = menu
         self.connect('map', self._watch_favorite)
@@ -131,9 +132,11 @@ class SongWidgetMenu(Gtk.PopoverMenu):
         starred = self._coresong.props.favorite
         self._favorite_action.set_enabled(self._coresong.props.is_tracker)
         self._favorite_action.set_state(GLib.Variant('b', starred))
-        self._favorite_section.remove_all()
-        self._favorite_section.append(
-            _('Unstar') if starred else _('Star'), 'songwidget.favorite')
+        label = _('Unstar') if starred else _('Star')
+        if label != self._favorite_label:
+            self._favorite_label = label
+            self._favorite_section.remove_all()
+            self._favorite_section.append(label, 'songwidget.favorite')
 
     def _watch_favorite(self, *args):
         if not self._favorite_handler:
@@ -153,15 +156,20 @@ class SongWidgetMenu(Gtk.PopoverMenu):
 
     def _play_next(self, action, param):
         self.popdown()
-        self._player.enqueue(self._coresong, play_next=True)
-        self._window.show_toast(
-            _("Playing next: %s") % self._coresong.props.title)
+        GLib.idle_add(self._queue_song, self._coresong, True)
 
     def _enqueue(self, action, param):
         self.popdown()
-        self._player.enqueue(self._coresong)
-        self._window.show_toast(
-            _("Added to queue: %s") % self._coresong.props.title)
+        GLib.idle_add(self._queue_song, self._coresong, False)
+
+    def _queue_song(self, song, play_next):
+        # Let GTK finish dispatching the menu activation before models and
+        # their widgets change. Capture the song before Now Playing changes.
+        self._player.enqueue(song, play_next=play_next)
+        message = (_("Playing next: %s") if play_next
+                   else _("Added to queue: %s"))
+        self._window.show_toast(message % song.props.title)
+        return GLib.SOURCE_REMOVE
 
     def _go_album(self, action, param):
         self.popdown()

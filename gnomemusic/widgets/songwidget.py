@@ -92,7 +92,7 @@ class SongWidget(Gtk.ListBoxRow):
         self._state = SongWidget.State.UNPLAYED
         context_click = Gtk.GestureClick(button=3)
         context_click.set_propagation_phase(Gtk.PropagationPhase.CAPTURE)
-        connect_weak(context_click, 'pressed', self._show_context_menu)
+        connect_weak(context_click, 'released', self._show_context_menu)
         self.add_controller(context_click)
         connect_weak(self._drag_source, 'prepare', self._on_drag_prepare)
         connect_weak(self._drag_source, 'drag-begin', self._on_drag_begin)
@@ -191,8 +191,10 @@ class SongWidget(Gtk.ListBoxRow):
 
     def _show_context_menu(self, gesture, presses, x, y):
         if self.props.menu is not None:
-            self._menu_button.popup()
+            # Finish the click before mapping a popup on a different native
+            # surface; GTK 4.14 otherwise loses track of the pressed widget.
             gesture.set_state(Gtk.EventSequenceState.CLAIMED)
+            self._menu_button.popup()
 
     @GObject.Property
     def state(self):

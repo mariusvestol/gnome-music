@@ -177,3 +177,31 @@ class MemoryTests(unittest.TestCase):
         player.emit('queue-changed')
         self.assertEqual(panel._entries.get_n_items(), 0)
         self.assertIs(panel._current_contents.get_first_child(), current)
+
+    def test_queue_menu_removes_row_after_activation_returns(self):
+        player = QueuePlayer()
+        player.songs = [Artwork() for _ in range(3)]
+        expected = player.songs[1:]
+
+        def remove(position):
+            player.songs.pop(position)
+            player.emit('queue-changed')
+
+        player.remove_queue_song = remove
+        app = SimpleNamespace(props=SimpleNamespace(
+            player=player, coremodel=None, window=Mock()))
+        panel = QueuePanel(app, app.props.window)
+        host = Gtk.Window(child=panel)
+        try:
+            host.present()
+            spin(.1)
+            row = panel._list.get_first_child().get_first_child()
+            button = row.get_last_child()
+            self.assertIsInstance(button, Gtk.MenuButton)
+            button.popup()
+            self.assertTrue(row.activate_action('queue.remove', None))
+            self.assertEqual(len(player.songs), 3)
+            self.assertTrue(spin(1, lambda: len(player.songs) == 2))
+            self.assertEqual([e.song for e in panel._entries], expected)
+        finally:
+            host.destroy()

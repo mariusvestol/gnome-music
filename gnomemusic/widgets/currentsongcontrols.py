@@ -68,10 +68,10 @@ class CurrentSongControls(Gtk.Box):
     def add_context_menu(self, widget):
         click = Gtk.GestureClick(button=3)
         click.set_propagation_phase(Gtk.PropagationPhase.CAPTURE)
-        click.connect('pressed', self._on_right_click)
+        click.connect('released', self._on_right_click)
         widget.add_controller(click)
 
     def _on_right_click(self, gesture, presses, x, y):
         if self._song is not None:
-            self._menu_button.popup()
             gesture.set_state(Gtk.EventSequenceState.CLAIMED)
+            self._menu_button.popup()

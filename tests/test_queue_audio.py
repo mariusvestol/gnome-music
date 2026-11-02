@@ -189,6 +189,66 @@ class QueueAudioTests(unittest.TestCase):
         self.assertIsNone(toolbar._menu)
         self.assertIsNone(sidebar._star_binding)
 
+    def test_song_context_menu_waits_for_right_button_release(self):
+        from gnomemusic.widgets.songwidgetmenu import SongWidgetMenu
+        self.app.props.player = self.player
+        self.app.props.window = Mock()
+        row = SongWidget(self.songs[0])
+        row.props.menu = SongWidgetMenu(self.app, row, self.songs[0])
+        rows = Gtk.ListBox()
+        rows.append(row)
+        host = Gtk.Window(child=rows)
+        try:
+            host.present()
+            spin(.1)
+            click = next(c for c in row.observe_controllers()
+                         if isinstance(c, Gtk.GestureClick)
+                         and c.props.button == 3)
+            click.emit('pressed', 1, 10., 10.)
+            self.assertFalse(row.props.menu.get_mapped())
+            click.emit('released', 1, 10., 10.)
+            self.assertTrue(row.props.menu.get_mapped())
+            row.props.menu.popdown()
+        finally:
+            host.destroy()
+
+    def test_opening_song_menu_preserves_unchanged_menu_items(self):
+        from gnomemusic.widgets.songwidgetmenu import SongWidgetMenu
+        self.app.props.player = self.player
+        self.app.props.window = Mock()
+        song = self._tracked_song(0)
+        menu = SongWidgetMenu(self.app, None, song)
+        changes = []
+        menu._favorite_section.connect(
+            'items-changed', lambda *args: changes.append(args))
+        for _ in range(3):
+            menu._watch_favorite()
+            menu._unwatch_favorite()
+        self.assertEqual(changes, [])
+        menu._watch_favorite()
+        song.props.favorite = True
+        self.assertTrue(menu._favorite_action.get_state().get_boolean())
+        label = menu._favorite_section.get_item_attribute_value(
+            0, 'label', GLib.VariantType.new('s'))
+        self.assertEqual(label.get_string(), 'Unstar')
+        menu._unwatch_favorite()
+
+    def test_menu_queue_action_finishes_click_and_keeps_original_target(self):
+        toolbar, _ = self._current_controls()
+        self.start()
+        original = self.player.props.current_song
+        for action, index in [('enqueue', -1), ('play_next', 1)]:
+            with self.subTest(action=action):
+                toolbar._menu.props.coreobject = original
+                before = self.player.queue_songs()
+                toolbar._menu.activate_action('songwidget.' + action, None)
+                self.assertEqual(self.player.queue_songs(), before)
+                toolbar._menu.props.coreobject = self.songs[2]
+                self.assertTrue(spin(1, lambda: len(self.player.queue_songs()) == len(before) + 1))
+                self.assertEqual(self.player.queue_songs()[index].props.media.get_id(),
+                                 original.props.media.get_id())
+                self.assertIs(self.player.props.current_song, original)
+
     def test_playlist_playback_copy_syncs_favorite_with_library(self):
         from gnomemusic.player import PlayerPlaylist
         self.app.props.search = Search()

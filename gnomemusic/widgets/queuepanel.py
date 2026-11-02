@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: GPL-2.0-or-later WITH GStreamer-exception-2008
 from gettext import gettext as _
 
-from gi.repository import Adw, Gdk, Gio, GObject, Gtk, Pango
+from gi.repository import Adw, Gdk, Gio, GLib, GObject, Gtk, Pango
 
 from gnomemusic.coverpaintable import CoverPaintable
 from gnomemusic.utils import ArtSize, DefaultIconType
@@ -130,7 +130,7 @@ class QueuePanel(Gtk.Box):
         drop.connect('drop', self._drop, item)
         row.add_controller(drop)
         click = Gtk.GestureClick(button=3)
-        click.connect('pressed', self._right_click, item)
+        click.connect('released', self._right_click, item)
         row.add_controller(click)
 
     def _bind_row(self, factory, item):
@@ -161,12 +161,23 @@ class QueuePanel(Gtk.Box):
         for name, label, callback in commands:
             menu.append(label, 'queue.' + name)
             action = Gio.SimpleAction.new(name, None)
-            action.connect('activate', lambda a, p, fn=callback: fn())
+            action.connect(
+                'activate', self._run_after_menu, button, callback)
             actions.add_action(action)
         row.insert_action_group('queue', actions)
         button.props.menu_model = menu
         row.append(button)
         item._queue_menu = button
+
+    def _run_after_menu(self, action, param, button, callback):
+        button.popdown()
+
+        def run():
+            # Moving or removing a row can destroy the activating menu.
+            callback()
+            return GLib.SOURCE_REMOVE
+
+        GLib.idle_add(run)
 
     def _unbind_row(self, factory, item):
         row = item.props.child
@@ -177,8 +188,8 @@ class QueuePanel(Gtk.Box):
 
     def _right_click(self, gesture, presses, x, y, item):
         if item.props.item and item._queue_menu:
-            item._queue_menu.popup()
             gesture.set_state(Gtk.EventSequenceState.CLAIMED)
+            item._queue_menu.popup()
 
     def _drop(self, target, source, x, y, item):
         if not item.props.item:
