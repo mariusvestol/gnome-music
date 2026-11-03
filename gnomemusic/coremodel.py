@@ -319,7 +319,9 @@ class CoreModel(GObject.GObject):
                     song.props.state = SongWidget.State.PLAYED
 
         elif playlist_type == PlayerPlaylist.Type.SEARCH_RESULT:
-            self._current_playlist_model = self._songs_search_flatten
+            # Search results are a snapshot for playback. Following this
+            # model's changes would replace the queue on every new search.
+            self._current_playlist_model = None
 
             for song in self._songs_search_flatten:
                 songs_added.append(song)
@@ -338,7 +340,11 @@ class CoreModel(GObject.GObject):
         if self._current_playlist_model is not None:
             self._player_signal_id = self._current_playlist_model.connect(
                 "items-changed", _on_items_changed)
-        self._previous_playlist_model = model
+        # The search model keeps its identity across queries, so explicitly
+        # playing another result must always load a fresh snapshot.
+        self._previous_playlist_model = (
+            None if playlist_type == PlayerPlaylist.Type.SEARCH_RESULT
+            else model)
 
         self.emit("playlist-loaded", playlist_type)
 

@@ -501,6 +501,83 @@ class QueueAudioTests(unittest.TestCase):
         coremodel._set_player_model(PlayerPlaylist.Type.PLAYLIST, source)
         self.assertEqual(len(self.player.queue_songs()), 2)
 
+    def _start_search_playback(self):
+        self.player.stop()
+        self.player._playlist._discoverer.stop()
+        self.app.props.search = Search()
+        self.app.props.search.props.search_mode_active = True
+        coremodel = CoreModel(self.app)
+        self.app.props.coremodel = coremodel
+        self.player = Player(self.app)
+        for deck in self.player._gst_player._decks:
+            sink = Gst.ElementFactory.make('fakesink')
+            sink.props.sync = True
+            deck._player.props.audio_sink = sink
+        results = Gio.ListStore.new(CoreSong)
+        results.splice(0, 0, self.songs[:2])
+        filtered = Gtk.FilterListModel.new(results, None)
+        coremodel.props.songs_search_proxy.append(filtered)
+        coremodel.props.active_core_object = self.songs[0]
+        self.player.play(self.songs[0])
+        self.assertTrue(spin(2, lambda: self.player.props.state == Playback.PLAYING))
+        return coremodel, results, filtered
+
+    def test_new_search_preserves_playback_and_queue(self):
+        coremodel, results, filtered = self._start_search_playback()
+        original = self.player.props.current_song
+        queue = self.player.queue_songs()
+        changes = []
+        self.player.connect('queue-changed', lambda *args: changes.append(args))
+        self.assertTrue(spin(1, lambda: self.player.get_position() > .15))
+        position = self.player.get_position()
+
+        # Tracker replaces the filter; remote sources clear/refill their store.
+        filtered.set_filter(Gtk.AnyFilter())
+        self.assertEqual(list(coremodel.props.songs_search), [])
+        self.assertEqual(self.player.queue_songs(), queue)
+        self.assertEqual(self.player.props.state, Playback.PLAYING)
+        results.remove_all()
+        results.append(self.songs[2])
+        filtered.set_filter(None)
+        results.append(self.songs[1])
+        self.app.props.search.props.search_mode_active = False
+        spin(.15)
+
+        self.assertEqual(self.player.queue_songs(), queue)
+        self.assertIs(self.player.props.current_song, original)
+        self.assertEqual(self.player.props.state, Playback.PLAYING)
+        self.assertGreater(self.player.get_position(), position)
+        self.assertEqual(changes, [])
+        self.player.next()
+        self.assertTrue(spin(2, lambda: self.player.props.current_song is self.songs[1]))
+
+    def test_play_from_new_search_uses_latest_results(self):
+        coremodel, results, filtered = self._start_search_playback()
+        results.splice(0, results.get_n_items(), [self.songs[2], self.songs[1]])
+        coremodel.props.active_core_object = self.songs[2]
+        self.player.play(self.songs[2])
+        self.assertTrue(spin(2, lambda: (
+            self.player.props.current_song is self.songs[2]
+            and self.player.props.state == Playback.PLAYING)))
+        self.assertEqual(self.player.queue_songs(), [self.songs[2], self.songs[1]])
+        self.assertEqual(self.player.props.state, Playback.PLAYING)
+        filtered.set_filter(Gtk.AnyFilter())
+        self.assertEqual(self.player.queue_songs(), [self.songs[2], self.songs[1]])
+        self.assertEqual(self.player.props.state, Playback.PLAYING)
+
+    def test_enqueue_from_new_search_preserves_original_queue(self):
+        coremodel, results, filtered = self._start_search_playback()
+        original_queue = self.player.queue_songs()
+        results.splice(0, results.get_n_items(), [self.songs[2]])
+        queued = self.player.enqueue(coremodel.props.songs_search[0], play_next=True)
+        self.assertEqual(self.player.queue_songs(),
+                         [original_queue[0], queued, original_queue[1]])
+        self.assertIs(self.player.props.current_song, original_queue[0])
+        self.assertEqual(self.player.props.state, Playback.PLAYING)
+        results.remove_all()
+        self.player.next()
+        self.assertTrue(spin(2, lambda: self.player.props.current_song is queued))
+
     def test_end_of_queue_stops_without_replaying(self):
         self.start()
         self.player.clear_queue()
