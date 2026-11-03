@@ -4,7 +4,7 @@ from gettext import gettext as _
 from gi.repository import Adw, Gio, GLib, Gtk
 
 
-class SoundDialog(Adw.PreferencesDialog):
+class SoundPage(Adw.PreferencesPage):
     PRESETS = {
         'Flat': [0] * 10,
         'Bass Boost': [6, 5, 4, 2, 0, 0, 0, 0, 0, 0],
@@ -15,13 +15,12 @@ class SoundDialog(Adw.PreferencesDialog):
 
     def __init__(self, application):
         super().__init__(
-            title=_('Sound'), content_width=620, content_height=660)
+            title=_('Sound'), name='sound',
+            icon_name='audio-volume-high-symbolic')
         self._settings = application.props.settings
         self._updating = True
-        page = Adw.PreferencesPage()
-        self.add(page)
         eq = Adw.PreferencesGroup(title=_('Equalizer'))
-        page.add(eq)
+        self.add(eq)
         switch = Adw.SwitchRow(
             title=_('Equalizer'), subtitle=_('Shape the sound of your music'))
         self._settings.bind(
@@ -76,7 +75,7 @@ class SoundDialog(Adw.PreferencesDialog):
         crossfade = Adw.PreferencesGroup(
             title=_('Crossfade'), description=_(
                 'Start the next song while the current song fades out.'))
-        page.add(crossfade)
+        self.add(crossfade)
         self._fade_row = Adw.ActionRow(title=_('Overlap'))
         fade = Gtk.Scale.new_with_range(Gtk.Orientation.HORIZONTAL, 0, 12, 1)
         fade.set_size_request(210, -1)

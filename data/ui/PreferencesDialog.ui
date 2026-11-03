@@ -1,9 +1,14 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <interface>
   <template class="PreferencesDialog" parent="AdwPreferencesDialog">
-    <property name="title" translatable="true">Preferences</property>
+    <property name="title" translatable="true">Settings</property>
+    <property name="content-width">640</property>
+    <property name="content-height">720</property>
     <child>
-      <object class="AdwPreferencesPage">
+      <object class="AdwPreferencesPage" id="_playback_page">
+        <property name="name">playback</property>
+        <property name="title" translatable="true">Playback</property>
+        <property name="icon-name">media-playback-start-symbolic</property>
         <child>
           <object class="AdwPreferencesGroup">
             <property name="title" translatable="true">Player Settings</property>

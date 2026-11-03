@@ -7,6 +7,9 @@ import typing
 
 from gi.repository import GObject, Gio, Gtk, Adw
 
+from gnomemusic.widgets.appearancepage import AppearancePage
+from gnomemusic.widgets.soundpage import SoundPage
+
 if typing.TYPE_CHECKING:
     from gnomemusic.application import Application
 
@@ -21,6 +24,7 @@ class PreferencesDialog(Adw.PreferencesDialog):
     _inhibit_suspend_row = Gtk.Template.Child()
     _repeatmode_row = Gtk.Template.Child()
     _replay_gain_row = Gtk.Template.Child()
+    _playback_page = Gtk.Template.Child()
 
     def __init__(self, application: Application) -> None:
         """Initialize the application settings dialog.
@@ -30,6 +34,13 @@ class PreferencesDialog(Adw.PreferencesDialog):
         super().__init__()
 
         self._settings = application.props.settings
+
+        # Keep the existing playback controls in the unified settings dialog.
+        self.remove(self._playback_page)
+        self.add(AppearancePage(self._settings))
+        self.add(SoundPage(application))
+        self.add(self._playback_page)
+        self.set_visible_page_name('appearance')
 
         self._repeatmode_row.props.selected = self._settings.get_enum("repeat")
         self._repeatmode_row.connect(

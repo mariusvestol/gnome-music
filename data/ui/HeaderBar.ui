@@ -32,11 +32,7 @@
         <attribute name="action">app.queue</attribute>
       </item>
       <item>
-        <attribute name="label" translatable="true">Sound</attribute>
-        <attribute name="action">app.sound</attribute>
-      </item>
-      <item>
-        <attribute name="label" translatable="true">Preferences</attribute>
+        <attribute name="label" translatable="true">Settings</attribute>
         <attribute name="action">app.preferences</attribute>
       </item>
       <item>

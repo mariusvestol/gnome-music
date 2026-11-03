@@ -32,11 +32,11 @@
 
 from typing import Optional
 from gettext import gettext as _
-from pathlib import Path
 
 from gi.repository import Adw, Gtk, Gio, GLib, Gdk, GObject
 
 from gnomemusic.about import show_about
+from gnomemusic.appearance import Appearance
 from gnomemusic.coregrilo import CoreGrilo
 from gnomemusic.coremodel import CoreModel
 from gnomemusic.inhibitsuspend import InhibitSuspend
@@ -162,7 +162,7 @@ class Application(Adw.Application):
         action_entries = [
             ("about", self._about, None),
             ("queue", self._toggle_queue, ("app.queue", ["<Ctrl>j"])),
-            ("sound", self._sound_dialog, None),
+            ("sound", self._preferences_dialog, None),
             ("preferences", self._preferences_dialog,
                 ("app.preferences", ["<Ctrl>comma"])),
             ("help", self._help, ("app.help", ["F1"])),
@@ -178,10 +178,6 @@ class Application(Adw.Application):
 
     def _toggle_queue(self, action, param):
         self._window.toggle_queue()
-
-    def _sound_dialog(self, action, param):
-        from gnomemusic.widgets.sounddialog import SoundDialog
-        SoundDialog(self).present(self._window)
 
     def _help(self, action: Gio.Action, param: Optional[GLib.Variant]) -> None:
 
@@ -206,37 +202,12 @@ class Application(Adw.Application):
 
     def do_startup(self):
         Adw.Application.do_startup(self)
-        self._setup_system_style()
+        self._appearance = Appearance(self._settings, self._log)
         self._set_actions()
 
-    def _setup_system_style(self):
-        style_manager = self.get_style_manager()
-        style_manager.set_color_scheme(Adw.ColorScheme.DEFAULT)
-
-        # GTK always loads the user's gtk.css, even in dark mode. If their
-        # custom theme includes a dark variant, apply it within Music so
-        # that it does not leave the app light when the system goes dark.
-        dark_theme = Path(GLib.get_user_config_dir()) / 'gtk-4.0/gtk-dark.css'
-        display = Gdk.Display.get_default()
-        if not dark_theme.is_file() or display is None:
-            return
-
-        provider = Gtk.CssProvider()
-        try:
-            provider.load_from_path(str(dark_theme))
-        except GLib.Error as error:
-            self._log.warning(f"Could not load the custom dark theme: {error}")
-            return
-
-        def update_style(*args):
-            if style_manager.props.dark:
-                Gtk.StyleContext.add_provider_for_display(
-                    display, provider, Gtk.STYLE_PROVIDER_PRIORITY_USER + 1)
-            else:
-                Gtk.StyleContext.remove_provider_for_display(display, provider)
-
-        style_manager.connect('notify::dark', update_style)
-        update_style()
+    def do_shutdown(self):
+        self._appearance.close()
+        Adw.Application.do_shutdown(self)
 
     def _quit(self, action=None, param=None):
         self._player.stop()

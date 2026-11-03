@@ -175,8 +175,8 @@
         <child>
           <object class="GtkButton">
             <property name="icon-name">emblem-system-symbolic</property>
-            <property name="tooltip-text" translatable="yes">Sound</property>
-            <property name="action-name">app.sound</property>
+            <property name="tooltip-text" translatable="yes">Settings</property>
+            <property name="action-name">app.preferences</property>
             <style><class name="flat"/></style>
           </object>
         </child>

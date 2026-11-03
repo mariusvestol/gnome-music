@@ -7,6 +7,14 @@
         <value nick="shuffle" value="3"/>
     </enum>
     <schema path="/org/gnome/Music/" id="org.gnome.Music" gettext-domain="org.gnome.Music">
+        <key type="s" name="accent-color-light">
+            <default>'#0860f2'</default>
+            <summary>Accent color for the light appearance</summary>
+        </key>
+        <key type="s" name="accent-color-dark">
+            <default>'#0860f2'</default>
+            <summary>Accent color for the dark appearance</summary>
+        </key>
         <key type="b" name="equalizer-enabled">
             <default>false</default>
             <summary>Enable the equalizer</summary>
