@@ -123,6 +123,8 @@ class SongWidgetMenu(Gtk.PopoverMenu):
         self._favorite_section = Gio.Menu()
         self._favorite_label: Optional[str] = None
         menu.append_section(None, self._favorite_section)
+        # Set the model only once. Replacing a template's initial model leaves
+        # GTK 4.14 position callbacks pointing at destroyed menu sections.
         self.props.menu_model = menu
         self.connect('map', self._watch_favorite)
         self.connect('unmap', self._unwatch_favorite)

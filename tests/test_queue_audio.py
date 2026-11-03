@@ -11,6 +11,7 @@ import math
 import os
 from pathlib import Path
 import struct
+import subprocess
 import sys
 import tempfile
 import time
@@ -188,6 +189,14 @@ class QueueAudioTests(unittest.TestCase):
         self.assertFalse(toolbar.props.visible)
         self.assertIsNone(toolbar._menu)
         self.assertIsNone(sidebar._star_binding)
+
+    def test_rooted_menus_have_no_dangling_position_callbacks(self):
+        env = dict(os.environ, G_DEBUG='fatal-criticals', PYTHONFAULTHANDLER='1')
+        result = subprocess.run(
+            [sys.executable, str(Path(__file__).with_name('check_menu_lifecycle.py'))],
+            env=env, capture_output=True, text=True, timeout=30)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn('Menu lifecycle passed', result.stdout)
 
     def test_song_context_menu_waits_for_right_button_release(self):
         from gnomemusic.widgets.songwidgetmenu import SongWidgetMenu
